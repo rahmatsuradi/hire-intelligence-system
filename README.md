@@ -96,7 +96,7 @@ Laporan keputusan rekrutmen final dengan:
 ## Tentang Pembuat
 
 **Rahmat Suradi**
-S1 Ilmu Komunikasi, Universitas Andalas (IPK 3.78)
+S1 Ilmu Komunikasi, Universitas Andalas
 
 Pengalaman sebagai sole HR practitioner di industri 
 konveksi: rekrutmen, administrasi kehadiran GPS, 
@@ -108,4 +108,4 @@ di organisasi kemahasiswaan sebagai Ketua Komisi
 Disiplin.
 
 [GitHub](https://github.com/rahmatsuradi) | 
-[LinkedIn](#)
+[LinkedIn](https://www.linkedin.com/in/rahmatsuradi/)
