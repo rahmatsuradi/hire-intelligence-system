@@ -1,0 +1,1272 @@
+"use client";
+
+import Link from "next/link";
+import { useCallback, useEffect, useRef, useState } from "react";
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Types & mock data
+═══════════════════════════════════════════════════════════════════════════ */
+
+type Theme = "light" | "dark" | "system";
+type Recommendation = "Strong Hire" | "Hire" | "Review" | "Reject";
+type RiskSeverity = "high" | "medium" | "low";
+
+interface NavItem {
+  id: string;
+  label: string;
+  href: string;
+  badge?: number;
+}
+
+interface CompetencyScore {
+  name: string;
+  score: number;
+  benchmark: number;
+  insight: string;
+}
+
+interface RiskFlag {
+  id: string;
+  label: string;
+  detail: string;
+  severity: RiskSeverity;
+}
+
+interface AnalysisReport {
+  reportId: string;
+  generatedAt: string;
+  confidence: number;
+  overallScore: number;
+  recommendation: Recommendation;
+  summary: string;
+  competencies: CompetencyScore[];
+  risks: RiskFlag[];
+  questions: { id: number; category: string; question: string; rationale: string }[];
+  recommendationDetail: string;
+  matchScore: number;
+  processingMs: number;
+}
+
+const NAV_MAIN: NavItem[] = [
+  { id: "dashboard", label: "Dashboard", href: "/" },
+  { id: "candidates", label: "Candidates", href: "/", badge: 1284 },
+  { id: "roles", label: "Open Roles", href: "/", badge: 47 },
+  { id: "interviews", label: "Interviews", href: "/", badge: 18 },
+  { id: "analytics", label: "Analytics", href: "/" },
+  { id: "reports", label: "Reports", href: "/" },
+];
+
+const NAV_TOOLS: NavItem[] = [
+  { id: "cv-analyzer", label: "CV Analyzer", href: "/cv-analyzer" },
+  { id: "interview-workspace", label: "Interview Workspace", href: "/interview" },
+  { id: "hiring-report", label: "Hiring Report", href: "/report" },
+  { id: "integrations", label: "Integrations", href: "/" },
+  { id: "settings", label: "Settings", href: "/" },
+];
+
+const DEPARTMENTS = [
+  "Engineering",
+  "Product",
+  "Data",
+  "Design",
+  "Sales",
+  "Finance",
+  "Security",
+  "Operations",
+];
+
+const MOCK_REPORT: Omit<AnalysisReport, "reportId" | "generatedAt"> = {
+  confidence: 94,
+  overallScore: 86,
+  recommendation: "Hire",
+  matchScore: 88,
+  processingMs: 2840,
+  summary:
+    "Candidate demonstrates strong technical depth and cross-functional leadership aligned with the target role. Communication and strategic thinking exceed department benchmarks. Minor gaps in tenure at current organization and limited people-management scope warrant targeted interview validation.",
+  competencies: [
+    {
+      name: "Technical Skills",
+      score: 91,
+      benchmark: 82,
+      insight: "8+ years across distributed systems; led platform migration at scale.",
+    },
+    {
+      name: "Leadership",
+      score: 84,
+      benchmark: 78,
+      insight: "Managed team of 6; mentored 4 engineers to promotion.",
+    },
+    {
+      name: "Communication",
+      score: 88,
+      benchmark: 85,
+      insight: "Executive stakeholder presentations; published internal tech blog.",
+    },
+    {
+      name: "Ownership",
+      score: 90,
+      benchmark: 80,
+      insight: "End-to-end delivery on critical revenue path; on-call lead.",
+    },
+    {
+      name: "Strategic Thinking",
+      score: 82,
+      benchmark: 79,
+      insight: "Roadmap input for 18-month platform vision; cost optimization initiative.",
+    },
+    {
+      name: "Execution",
+      score: 87,
+      benchmark: 81,
+      insight: "Consistent sprint delivery; reduced incident MTTR by 40%.",
+    },
+  ],
+  risks: [
+    {
+      id: "R1",
+      label: "Short tenure at current role",
+      detail: "14 months in current position — validate reasons for transition and retention risk.",
+      severity: "medium",
+    },
+    {
+      id: "R2",
+      label: "Limited direct reports",
+      detail: "Most recent leadership scope is technical lead, not people manager for target level.",
+      severity: "medium",
+    },
+    {
+      id: "R3",
+      label: "Domain gap",
+      detail: "No explicit experience in regulated fintech; assess compliance learning curve.",
+      severity: "low",
+    },
+  ],
+  questions: [
+    {
+      id: 1,
+      category: "Leadership",
+      question:
+        "Describe a situation where you had to influence a senior stakeholder without direct authority. What was the outcome?",
+      rationale: "Validates leadership score and cross-functional communication claims.",
+    },
+    {
+      id: 2,
+      category: "Technical",
+      question:
+        "Walk us through the architecture decisions behind your largest platform migration. What trade-offs did you make?",
+      rationale: "Probes depth behind high technical skills assessment.",
+    },
+    {
+      id: 3,
+      category: "Ownership",
+      question:
+        "Tell us about a production incident you owned end-to-end. How did you prevent recurrence?",
+      rationale: "Confirms execution and ownership competency signals.",
+    },
+    {
+      id: 4,
+      category: "Strategic",
+      question:
+        "How would you approach your first 90 days in this role given our current product roadmap priorities?",
+      rationale: "Tests strategic thinking fit for target position.",
+    },
+    {
+      id: 5,
+      category: "Risk validation",
+      question:
+        "What prompted your interest in leaving your current role after 14 months, and what are you looking for in your next position?",
+      rationale: "Directly addresses tenure and retention risk flag.",
+    },
+  ],
+  recommendationDetail:
+    "Proceed to panel interview. Candidate profile aligns strongly with role requirements. Recommend panel focus on people-management scope and domain onboarding plan. Offer band: L6 — top of range pending reference checks.",
+};
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Icons & utilities (aligned with src/app/page.tsx)
+═══════════════════════════════════════════════════════════════════════════ */
+
+function cn(...classes: (string | false | undefined)[]) {
+  return classes.filter(Boolean).join(" ");
+}
+
+function Icon({
+  children,
+  className = "h-5 w-5",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      aria-hidden="true"
+    >
+      {children}
+    </svg>
+  );
+}
+
+const PATHS = {
+  dashboard:
+    "M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z",
+  users:
+    "M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z",
+  briefcase:
+    "M20.25 14.15v4.25c0 1.094-.787 2.036-1.872 2.18-2.087.277-4.216.42-6.378.42s-4.291-.143-6.378-.42c-1.085-.144-1.872-1.086-1.872-2.18v-4.25m16.5 0a2.18 2.18 0 00.75-1.661V8.706c0-1.081-.768-2.015-1.837-2.175a48.114 48.114 0 00-3.413-.387m4.5 8.006c-.763.183-1.555.349-2.373.49m-11.31 0a48.11 48.11 0 01-2.373-.49 2.25 2.25 0 01-1.837-2.175V6.75a2.18 2.18 0 00.75-1.661m0 0A48.118 48.118 0 0012 3c2.356 0 4.692.284 6.978.832M12 3v1.5m0 0V3m0 1.5h6.75",
+  calendar:
+    "M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5",
+  chart:
+    "M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z",
+  document:
+    "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75M9.75 21v-7.875a3.375 3.375 0 013.375-3.375h3.375M9.75 21H5.625a1.125 1.125 0 01-1.125-1.125v-9.75a1.125 1.125 0 011.125-1.125h9.75",
+  scan:
+    "M7.5 3.75H6A2.25 2.25 0 003.75 6v1.5M16.5 3.75H18A2.25 2.25 0 0120.25 6v1.5M16.5 20.25H18A2.25 2.25 0 0120.25 18v-1.5M7.5 20.25H6A2.25 2.25 0 003.75 18v-1.5M9 12.75h6",
+  workspace:
+    "M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25",
+  report:
+    "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75v-.75V4.875C9.75 4.256 10.306 3.75 11 3.75H15M9.75 15.75h4.5M9.75 12h4.5m-6-3h1.5m-1.5 3h1.5m-1.5 3h1.5",
+  cog: "M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z",
+  plug: "M13.5 6.75H12v4.5h1.5m-1.5-9h1.5m-3.75 3h15a2.25 2.25 0 012.25 2.25v6.75A2.25 2.25 0 0118 18.75H6A2.25 2.25 0 013.75 16.5v-6.75A2.25 2.25 0 016 7.5h1.5m9 0V6a2.25 2.25 0 00-2.25-2.25H9.75A2.25 2.25 0 007.5 6v1.5",
+  search:
+    "m21 21-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z",
+  bell: "M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0",
+  menu: "M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5",
+  close: "M6 18L18 6M6 6l12 12",
+  chevron: "M8.25 4.5l7.5 7.5-7.5 7.5",
+  chevronDown: "M19.5 8.25l-7.5 7.5-7.5-7.5",
+  sun: "M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z",
+  moon: "M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z",
+  upload:
+    "M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5",
+  documentPdf:
+    "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75M9.75 21v-7.875a3.375 3.375 0 013.375-3.375h3.375M9.75 21H5.625a1.125 1.125 0 01-1.125-1.125v-9.75a1.125 1.125 0 011.125-1.125h9.75M15 10.5a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z",
+  warning:
+    "M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z",
+  sparkles:
+    "M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z",
+  check:
+    "M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
+  download:
+    "M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3",
+} as const;
+
+const NAV_ICON_MAP: Record<string, keyof typeof PATHS> = {
+  dashboard: "dashboard",
+  candidates: "users",
+  roles: "briefcase",
+  interviews: "calendar",
+  analytics: "chart",
+  reports: "document",
+  "cv-analyzer": "scan",
+  "interview-workspace": "workspace",
+  "hiring-report": "report",
+  integrations: "plug",
+  settings: "cog",
+};
+
+function SvgPath({ name }: { name: keyof typeof PATHS }) {
+  return (
+    <path strokeLinecap="round" strokeLinejoin="round" d={PATHS[name]} />
+  );
+}
+
+function scoreColor(score: number) {
+  if (score >= 85) return "bg-emerald-500";
+  if (score >= 75) return "bg-blue-500";
+  if (score >= 65) return "bg-amber-500";
+  return "bg-slate-400";
+}
+
+function recommendationStyles(rec: Recommendation) {
+  const map: Record<
+    Recommendation,
+    { card: string; badge: string; ring: string }
+  > = {
+    "Strong Hire": {
+      card: "from-emerald-500/10 to-emerald-600/5 border-emerald-200 dark:border-emerald-500/30",
+      badge: "bg-emerald-600 text-white",
+      ring: "ring-emerald-500/30",
+    },
+    Hire: {
+      card: "from-blue-500/10 to-indigo-500/5 border-blue-200 dark:border-blue-500/30",
+      badge: "bg-blue-600 text-white",
+      ring: "ring-blue-500/30",
+    },
+    Review: {
+      card: "from-amber-500/10 to-amber-600/5 border-amber-200 dark:border-amber-500/30",
+      badge: "bg-amber-600 text-white",
+      ring: "ring-amber-500/30",
+    },
+    Reject: {
+      card: "from-red-500/10 to-red-600/5 border-red-200 dark:border-red-500/30",
+      badge: "bg-red-600 text-white",
+      ring: "ring-red-500/30",
+    },
+  };
+  return map[rec];
+}
+
+function riskSeverityStyles(severity: RiskSeverity) {
+  const map = {
+    high: "bg-red-50 text-red-700 ring-red-600/20 dark:bg-red-500/10 dark:text-red-400 dark:ring-red-500/30",
+    medium:
+      "bg-amber-50 text-amber-700 ring-amber-600/20 dark:bg-amber-500/10 dark:text-amber-400 dark:ring-amber-500/30",
+    low: "bg-slate-100 text-slate-600 ring-slate-500/20 dark:bg-slate-500/10 dark:text-slate-400 dark:ring-slate-500/30",
+  };
+  return map[severity];
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   UI primitives (matching dashboard)
+═══════════════════════════════════════════════════════════════════════════ */
+
+function Card({
+  children,
+  className,
+  padding = true,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  padding?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-xl border border-slate-200/80 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900",
+        padding && "p-5",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+function Button({
+  children,
+  variant = "secondary",
+  size = "md",
+  className,
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: "primary" | "secondary" | "ghost";
+  size?: "sm" | "md" | "lg";
+}) {
+  const base =
+    "inline-flex items-center justify-center gap-1.5 font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 disabled:pointer-events-none disabled:opacity-50";
+  const sizes = {
+    sm: "rounded-lg px-2.5 py-1 text-xs",
+    md: "rounded-lg px-3 py-1.5 text-sm",
+    lg: "rounded-lg px-5 py-2.5 text-sm",
+  };
+  const variants = {
+    primary:
+      "bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600",
+    secondary:
+      "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800",
+    ghost:
+      "text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800",
+  };
+  return (
+    <button
+      className={cn(base, sizes[size], variants[variant], className)}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Label({ children, htmlFor }: { children: React.ReactNode; htmlFor?: string }) {
+  return (
+    <label
+      htmlFor={htmlFor}
+      className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300"
+    >
+      {children}
+    </label>
+  );
+}
+
+const inputClass =
+  "w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/25 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500";
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Layout (sidebar + topbar — consistent with dashboard)
+═══════════════════════════════════════════════════════════════════════════ */
+
+function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const renderNav = (items: NavItem[]) =>
+    items.map((item) => {
+      const active = item.id === "cv-analyzer";
+      const iconKey = NAV_ICON_MAP[item.id] ?? "dashboard";
+      return (
+        <Link
+          key={item.id}
+          href={item.href}
+          onClick={onClose}
+          className={cn(
+            "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+            active
+              ? "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400"
+              : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200",
+          )}
+          aria-current={active ? "page" : undefined}
+        >
+          <Icon className="h-5 w-5 shrink-0">
+            <SvgPath name={iconKey} />
+          </Icon>
+          <span className="truncate">{item.label}</span>
+          {item.badge !== undefined && (
+            <span
+              className={cn(
+                "ml-auto rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums",
+                active
+                  ? "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300"
+                  : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400",
+              )}
+            >
+              {item.badge > 999 ? `${(item.badge / 1000).toFixed(1)}k` : item.badge}
+            </span>
+          )}
+        </Link>
+      );
+    });
+
+  return (
+    <>
+      {open && (
+        <button
+          type="button"
+          aria-label="Close navigation"
+          className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm lg:hidden"
+          onClick={onClose}
+        />
+      )}
+      <aside
+        className={cn(
+          "fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-slate-200 bg-white transition-transform duration-200 ease-out dark:border-slate-800 dark:bg-slate-900 lg:static lg:translate-x-0",
+          open ? "translate-x-0" : "-translate-x-full",
+        )}
+        aria-label="Main navigation"
+      >
+        <div className="flex h-16 shrink-0 items-center gap-3 border-b border-slate-200 px-5 dark:border-slate-800">
+          <Link
+            href="/"
+            className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/20"
+          >
+            <span className="text-sm font-bold tracking-tight">HI</span>
+          </Link>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">
+              Hire Intelligence
+            </p>
+            <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+              Enterprise Platform
+            </p>
+          </div>
+          <button
+            type="button"
+            className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 lg:hidden dark:hover:bg-slate-800"
+            onClick={onClose}
+            aria-label="Close menu"
+          >
+            <Icon className="h-5 w-5">
+              <SvgPath name="close" />
+            </Icon>
+          </button>
+        </div>
+
+        <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-4">
+          <div>
+            <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              Main
+            </p>
+            <div className="space-y-0.5">{renderNav(NAV_MAIN)}</div>
+          </div>
+          <div>
+            <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              Tools
+            </p>
+            <div className="space-y-0.5">{renderNav(NAV_TOOLS)}</div>
+          </div>
+        </nav>
+
+        <div className="shrink-0 border-t border-slate-200 p-4 dark:border-slate-800">
+          <div className="rounded-xl border border-slate-200/80 bg-slate-50 p-4 dark:border-slate-700/50 dark:bg-slate-800/50">
+            <div className="flex items-center gap-2">
+              <Icon className="h-4 w-4 text-blue-600 dark:text-blue-400">
+                <SvgPath name="sparkles" />
+              </Icon>
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                AI CV Analysis
+              </p>
+            </div>
+            <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
+              Powered by Hire Intelligence
+            </p>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              Upload PDF resumes for instant competency scoring and interview guides.
+            </p>
+          </div>
+        </div>
+      </aside>
+    </>
+  );
+}
+
+function TopBar({
+  isDark,
+  onThemeToggle,
+  onMenuOpen,
+}: {
+  isDark: boolean;
+  onThemeToggle: () => void;
+  onMenuOpen: () => void;
+}) {
+  return (
+    <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-3 border-b border-slate-200 bg-white/90 px-4 backdrop-blur-md sm:gap-4 sm:px-6 dark:border-slate-800 dark:bg-slate-900/90">
+      <button
+        type="button"
+        className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 lg:hidden dark:hover:bg-slate-800"
+        onClick={onMenuOpen}
+        aria-label="Open navigation menu"
+      >
+        <Icon className="h-5 w-5">
+          <SvgPath name="menu" />
+        </Icon>
+      </button>
+
+      <div className="hidden min-w-0 sm:block">
+        <h1 className="truncate text-lg font-semibold text-slate-900 dark:text-white">
+          CV Analyzer
+        </h1>
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          AI-powered resume intelligence
+        </p>
+      </div>
+
+      <div className="ml-auto flex items-center gap-1 sm:gap-2">
+        <button
+          type="button"
+          onClick={onThemeToggle}
+          className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+          aria-label={`Switch to ${isDark ? "light" : "dark"} mode`}
+        >
+          <Icon className="h-5 w-5">
+            <SvgPath name={isDark ? "sun" : "moon"} />
+          </Icon>
+        </button>
+        <button
+          type="button"
+          className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+          aria-label="Notifications, 3 unread"
+        >
+          <Icon className="h-5 w-5">
+            <SvgPath name="bell" />
+          </Icon>
+          <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white ring-2 ring-white dark:ring-slate-900">
+            3
+          </span>
+        </button>
+        <div className="hidden h-8 w-px bg-slate-200 md:block dark:bg-slate-700" />
+        <button
+          type="button"
+          className="flex items-center gap-2 rounded-lg py-1 pl-1 pr-2 hover:bg-slate-100 md:pr-3 dark:hover:bg-slate-800"
+          aria-label="User menu"
+        >
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-xs font-semibold text-white">
+            AK
+          </div>
+          <div className="hidden text-left lg:block">
+            <p className="text-sm font-medium text-slate-900 dark:text-white">Alex Kim</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Talent Lead</p>
+          </div>
+          <Icon className="hidden h-4 w-4 text-slate-400 lg:block">
+            <SvgPath name="chevronDown" />
+          </Icon>
+        </button>
+      </div>
+    </header>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CV Analyzer features
+═══════════════════════════════════════════════════════════════════════════ */
+
+function PdfDropzone({
+  file,
+  dragActive,
+  onFile,
+  onDragActive,
+}: {
+  file: File | null;
+  dragActive: boolean;
+  onFile: (f: File | null) => void;
+  onDragActive: (v: boolean) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleFiles = (files: FileList | null) => {
+    if (!files?.length) return;
+    const f = files[0];
+    if (f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf")) {
+      onFile(f);
+    }
+  };
+
+  return (
+    <div>
+      <div
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") inputRef.current?.click();
+        }}
+        onDragEnter={(e) => {
+          e.preventDefault();
+          onDragActive(true);
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          onDragActive(true);
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          onDragActive(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          onDragActive(false);
+          handleFiles(e.dataTransfer.files);
+        }}
+        onClick={() => inputRef.current?.click()}
+        className={cn(
+          "relative cursor-pointer rounded-xl border-2 border-dashed px-6 py-10 text-center transition-colors",
+          dragActive
+            ? "border-blue-500 bg-blue-50/50 dark:bg-blue-500/10"
+            : file
+              ? "border-emerald-300 bg-emerald-50/30 dark:border-emerald-500/40 dark:bg-emerald-500/5"
+              : "border-slate-300 bg-slate-50/50 hover:border-blue-400 hover:bg-blue-50/30 dark:border-slate-600 dark:bg-slate-800/30 dark:hover:border-blue-500/50",
+        )}
+        aria-label="Upload PDF resume"
+      >
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".pdf,application/pdf"
+          className="sr-only"
+          onChange={(e) => handleFiles(e.target.files)}
+        />
+
+        {file ? (
+          <div className="flex flex-col items-center gap-3">
+            <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-500/20">
+              <Icon className="h-7 w-7 text-emerald-600 dark:text-emerald-400">
+                <SvgPath name="documentPdf" />
+              </Icon>
+            </div>
+            <div>
+              <p className="font-medium text-slate-900 dark:text-white">{file.name}</p>
+              <p className="mt-0.5 text-sm text-slate-500">
+                {(file.size / 1024).toFixed(1)} KB · PDF ready for analysis
+              </p>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                onFile(null);
+                if (inputRef.current) inputRef.current.value = "";
+              }}
+            >
+              Remove file
+            </Button>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-3">
+            <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800">
+              <Icon className="h-7 w-7 text-slate-400">
+                <SvgPath name="upload" />
+              </Icon>
+            </div>
+            <div>
+              <p className="font-medium text-slate-900 dark:text-white">
+                Drop PDF resume here
+              </p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                or click to browse · max 10 MB
+              </p>
+            </div>
+            <Button variant="secondary" size="sm" type="button">
+              Select PDF file
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AnalysisReportPanel({
+  report,
+  candidateName,
+  targetPosition,
+  department,
+}: {
+  report: AnalysisReport;
+  candidateName: string;
+  targetPosition: string;
+  department: string;
+}) {
+  const recStyle = recommendationStyles(report.recommendation);
+
+  return (
+    <div className="space-y-6">
+      {/* Report header */}
+      <Card className="overflow-hidden p-0">
+        <div className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50/50 px-5 py-4 dark:border-slate-800 dark:from-slate-900 dark:to-blue-500/5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white shadow-sm">
+                <Icon className="h-6 w-6">
+                  <SvgPath name="sparkles" />
+                </Icon>
+              </div>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+                    AI Analysis Report
+                  </h2>
+                  <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-700 dark:bg-blue-500/20 dark:text-blue-300">
+                    Completed
+                  </span>
+                </div>
+                <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+                  {candidateName} · {targetPosition} · {department}
+                </p>
+                <p className="mt-1 font-mono text-xs text-slate-400">
+                  {report.reportId} · {report.generatedAt}
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-4 sm:justify-end">
+              <div className="text-center">
+                <p className="text-2xl font-bold tabular-nums text-slate-900 dark:text-white">
+                  {report.overallScore}
+                </p>
+                <p className="text-xs text-slate-500">Overall score</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold tabular-nums text-blue-600 dark:text-blue-400">
+                  {report.matchScore}%
+                </p>
+                <p className="text-xs text-slate-500">Role match</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                  {report.confidence}%
+                </p>
+                <p className="text-xs text-slate-500">Confidence</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="px-5 py-4">
+          <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+            <span className="font-semibold text-slate-900 dark:text-white">
+              Executive summary:{" "}
+            </span>
+            {report.summary}
+          </p>
+          <p className="mt-3 text-xs text-slate-400">
+            Analysis completed in {(report.processingMs / 1000).toFixed(1)}s · Model
+            v3.2-enterprise · No PII stored
+          </p>
+        </div>
+      </Card>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Competency scores */}
+        <Card>
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+                Competency Assessment
+              </h3>
+              <p className="mt-0.5 text-sm text-slate-500">
+                Scores vs. role benchmark (0–100)
+              </p>
+            </div>
+          </div>
+          <ul className="mt-5 space-y-5">
+            {report.competencies.map((comp) => {
+              const above = comp.score >= comp.benchmark;
+              return (
+                <li key={comp.name}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                      {comp.name}
+                    </span>
+                    <div className="flex items-center gap-2 tabular-nums">
+                      <span className="text-sm font-bold text-slate-900 dark:text-white">
+                        {comp.score}
+                      </span>
+                      <span className="text-xs text-slate-400">/ {comp.benchmark}</span>
+                      <span
+                        className={cn(
+                          "text-xs font-medium",
+                          above
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : "text-amber-600 dark:text-amber-400",
+                        )}
+                      >
+                        {above ? "+" : ""}
+                        {comp.score - comp.benchmark}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="relative mt-2 h-2.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                    <div
+                      className={cn("h-full rounded-full", scoreColor(comp.score))}
+                      style={{ width: `${comp.score}%` }}
+                    />
+                    <div
+                      className="absolute inset-y-0 w-0.5 bg-slate-500"
+                      style={{ left: `${comp.benchmark}%` }}
+                      title={`Benchmark: ${comp.benchmark}`}
+                    />
+                  </div>
+                  <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
+                    {comp.insight}
+                  </p>
+                </li>
+              );
+            })}
+          </ul>
+        </Card>
+
+        {/* Risk flags */}
+        <Card>
+          <div className="flex items-center gap-2">
+            <Icon className="h-5 w-5 text-amber-500">
+              <SvgPath name="warning" />
+            </Icon>
+            <div>
+              <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+                Risk Flags
+              </h3>
+              <p className="mt-0.5 text-sm text-slate-500">
+                {report.risks.length} items flagged for interview validation
+              </p>
+            </div>
+          </div>
+          <ul className="mt-5 space-y-3">
+            {report.risks.map((risk) => (
+              <li
+                key={risk.id}
+                className="rounded-lg border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-800/50"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <p className="font-medium text-slate-900 dark:text-white">
+                    {risk.label}
+                  </p>
+                  <span
+                    className={cn(
+                      "inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ring-1 ring-inset",
+                      riskSeverityStyles(risk.severity),
+                    )}
+                  >
+                    {risk.severity}
+                  </span>
+                </div>
+                <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+                  {risk.detail}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      </div>
+
+      {/* Interview questions */}
+      <Card>
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+              Structured Interview Questions
+            </h3>
+            <p className="mt-0.5 text-sm text-slate-500">
+              AI-generated probes mapped to competency gaps and risk flags
+            </p>
+          </div>
+          <Button variant="secondary" size="sm">
+            <Icon className="h-4 w-4">
+              <SvgPath name="download" />
+            </Icon>
+            Export guide
+          </Button>
+        </div>
+        <ol className="mt-5 space-y-4">
+          {report.questions.map((q) => (
+            <li
+              key={q.id}
+              className="flex gap-4 rounded-lg border border-slate-200 p-4 dark:border-slate-700"
+            >
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm font-bold text-blue-700 dark:bg-blue-500/20 dark:text-blue-300">
+                {q.id}
+              </span>
+              <div className="min-w-0 flex-1">
+                <span className="inline-flex rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                  {q.category}
+                </span>
+                <p className="mt-2 font-medium text-slate-900 dark:text-white">
+                  {q.question}
+                </p>
+                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                  <span className="font-medium text-slate-600 dark:text-slate-300">
+                    Rationale:{" "}
+                  </span>
+                  {q.rationale}
+                </p>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </Card>
+
+      {/* Final recommendation */}
+      <div
+        className={cn(
+          "rounded-xl border bg-gradient-to-br p-6 ring-1 ring-inset",
+          recStyle.card,
+          recStyle.ring,
+        )}
+      >
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-4">
+            <div
+              className={cn(
+                "flex h-14 w-14 items-center justify-center rounded-xl shadow-sm",
+                recStyle.badge,
+              )}
+            >
+              <Icon className="h-8 w-8">
+                <SvgPath name="check" />
+              </Icon>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                Final hiring recommendation
+              </p>
+              <p className="mt-0.5 text-2xl font-bold text-slate-900 dark:text-white">
+                {report.recommendation}
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="secondary" size="sm">
+              Share report
+            </Button>
+            <Button variant="primary" size="sm">
+              Schedule interview
+            </Button>
+          </div>
+        </div>
+        <p className="mt-4 text-sm leading-relaxed text-slate-700 dark:text-slate-300">
+          {report.recommendationDetail}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Page
+═══════════════════════════════════════════════════════════════════════════ */
+
+export default function CvAnalyzerPage() {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [theme, setTheme] = useState<Theme>("system");
+  const [isDark, setIsDark] = useState(false);
+
+  const [file, setFile] = useState<File | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+  const [candidateName, setCandidateName] = useState("");
+  const [targetPosition, setTargetPosition] = useState("");
+  const [department, setDepartment] = useState("");
+  const [analyzing, setAnalyzing] = useState(false);
+  const [report, setReport] = useState<AnalysisReport | null>(null);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const resolve = () => {
+      const dark = theme === "dark" || (theme === "system" && mq.matches);
+      setIsDark(dark);
+      document.documentElement.classList.toggle("dark", dark);
+    };
+    resolve();
+    const onChange = () => {
+      if (theme === "system") resolve();
+    };
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [theme]);
+
+  const cycleTheme = useCallback(() => {
+    setTheme((t) => (t === "light" ? "dark" : t === "dark" ? "system" : "light"));
+  }, []);
+
+  const canAnalyze =
+    file !== null &&
+    candidateName.trim() !== "" &&
+    targetPosition.trim() !== "" &&
+    department !== "";
+
+  const handleAnalyze = () => {
+    if (!canAnalyze) return;
+    setAnalyzing(true);
+    setReport(null);
+
+    setTimeout(() => {
+      const now = new Date();
+      setReport({
+        ...MOCK_REPORT,
+        reportId: `RPT-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
+        generatedAt: now.toLocaleString("en-US", {
+          dateStyle: "medium",
+          timeStyle: "short",
+        }),
+      });
+      setAnalyzing(false);
+    }, 2200);
+  };
+
+  return (
+    <div
+      className={cn(
+        "flex min-h-screen bg-slate-50 font-sans text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100",
+        isDark && "dark",
+      )}
+      data-theme={theme}
+    >
+      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <TopBar
+          isDark={isDark}
+          onThemeToggle={cycleTheme}
+          onMenuOpen={() => setSidebarOpen(true)}
+        />
+
+        <main id="main-content" className="flex-1 overflow-y-auto">
+          <div className="border-b border-slate-200 bg-white px-4 py-3 sm:px-6 dark:border-slate-800 dark:bg-slate-900">
+            <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-sm">
+              <Link
+                href="/"
+                className="text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+              >
+                Home
+              </Link>
+              <Icon className="h-3.5 w-3.5 text-slate-300">
+                <SvgPath name="chevron" />
+              </Icon>
+              <span className="font-medium text-slate-900 dark:text-white">CV Analyzer</span>
+              <span className="ml-auto hidden rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700 sm:inline dark:bg-indigo-500/10 dark:text-indigo-400">
+                <span className="inline-flex items-center gap-1">
+                  <Icon className="h-3.5 w-3.5">
+                    <SvgPath name="sparkles" />
+                  </Icon>
+                  AI-assisted analysis
+                </span>
+              </span>
+            </nav>
+          </div>
+
+          <div className="space-y-6 p-4 sm:p-6">
+            <div className="sm:hidden">
+              <h1 className="text-xl font-semibold text-slate-900 dark:text-white">
+                CV Analyzer
+              </h1>
+              <p className="text-sm text-slate-500">AI-powered resume intelligence</p>
+            </div>
+
+            <div className="grid gap-6 xl:grid-cols-5">
+              {/* Input column */}
+              <div className="space-y-6 xl:col-span-2">
+                <Card>
+                  <div className="flex items-center gap-2">
+                    <Icon className="h-5 w-5 text-blue-600 dark:text-blue-400">
+                      <SvgPath name="upload" />
+                    </Icon>
+                    <div>
+                      <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+                        Upload Resume
+                      </h2>
+                      <p className="text-sm text-slate-500">PDF format only</p>
+                    </div>
+                  </div>
+                  <div className="mt-4">
+                    <PdfDropzone
+                      file={file}
+                      dragActive={dragActive}
+                      onFile={setFile}
+                      onDragActive={setDragActive}
+                    />
+                  </div>
+                </Card>
+
+                <Card>
+                  <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+                    Candidate Details
+                  </h2>
+                  <p className="mt-0.5 text-sm text-slate-500">
+                    Required for role-calibrated analysis
+                  </p>
+
+                  <form
+                    className="mt-4 space-y-4"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleAnalyze();
+                    }}
+                  >
+                    <div>
+                      <Label htmlFor="candidate-name">Candidate name</Label>
+                      <input
+                        id="candidate-name"
+                        type="text"
+                        value={candidateName}
+                        onChange={(e) => setCandidateName(e.target.value)}
+                        placeholder="e.g. Sarah Chen"
+                        className={inputClass}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="target-position">Target position</Label>
+                      <input
+                        id="target-position"
+                        type="text"
+                        value={targetPosition}
+                        onChange={(e) => setTargetPosition(e.target.value)}
+                        placeholder="e.g. Senior Product Manager"
+                        className={inputClass}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="department">Department</Label>
+                      <select
+                        id="department"
+                        value={department}
+                        onChange={(e) => setDepartment(e.target.value)}
+                        className={cn(inputClass, "cursor-pointer")}
+                        required
+                      >
+                        <option value="">Select department</option>
+                        {DEPARTMENTS.map((d) => (
+                          <option key={d} value={d}>
+                            {d}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      size="lg"
+                      className="w-full"
+                      disabled={!canAnalyze || analyzing}
+                    >
+                      {analyzing ? (
+                        <>
+                          <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                          Analyzing CV…
+                        </>
+                      ) : (
+                        <>
+                          <Icon className="h-5 w-5">
+                            <SvgPath name="sparkles" />
+                          </Icon>
+                          Analyze CV
+                        </>
+                      )}
+                    </Button>
+
+                    {!canAnalyze && !analyzing && (
+                      <p className="text-center text-xs text-slate-400">
+                        Upload a PDF and complete all fields to run analysis
+                      </p>
+                    )}
+                  </form>
+                </Card>
+              </div>
+
+              {/* Results column */}
+              <div className="xl:col-span-3">
+                {analyzing && (
+                  <Card className="flex flex-col items-center justify-center py-16">
+                    <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-100 dark:bg-blue-500/20">
+                      <Icon className="h-8 w-8 animate-pulse text-blue-600 dark:text-blue-400">
+                        <SvgPath name="sparkles" />
+                      </Icon>
+                    </div>
+                    <p className="mt-4 font-medium text-slate-900 dark:text-white">
+                      Running AI analysis…
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Extracting competencies, risk signals, and interview probes
+                    </p>
+                    <div className="mt-6 h-1.5 w-48 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+                      <div className="h-full w-2/3 animate-pulse rounded-full bg-gradient-to-r from-blue-500 to-indigo-500" />
+                    </div>
+                  </Card>
+                )}
+
+                {!analyzing && !report && (
+                  <Card className="flex flex-col items-center justify-center border-dashed py-20 text-center">
+                    <Icon className="h-12 w-12 text-slate-300 dark:text-slate-600">
+                      <SvgPath name="scan" />
+                    </Icon>
+                    <p className="mt-4 font-medium text-slate-900 dark:text-white">
+                      No analysis yet
+                    </p>
+                    <p className="mt-1 max-w-sm text-sm text-slate-500">
+                      Upload a resume, enter candidate details, and click Analyze CV to
+                      generate a full hiring intelligence report.
+                    </p>
+                  </Card>
+                )}
+
+                {!analyzing && report && (
+                  <AnalysisReportPanel
+                    report={report}
+                    candidateName={candidateName}
+                    targetPosition={targetPosition}
+                    department={department}
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+
+          <footer className="border-t border-slate-200 px-6 py-4 dark:border-slate-800">
+            <div className="flex flex-col gap-2 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between dark:text-slate-400">
+              <p>© 2026 Hire Intelligence · Enterprise Hiring Platform</p>
+              <p className="tabular-nums">v2.4.1 · SOC 2 Type II · GDPR compliant</p>
+            </div>
+          </footer>
+        </main>
+      </div>
+    </div>
+  );
+}
