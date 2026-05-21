@@ -1,5 +1,14 @@
 "use client";
 
+import {
+  CitationNote,
+  CompetencyReportTable,
+  EvidenceValidityPanel,
+} from "@/components/competency-framework-ui";
+import {
+  buildReportCompetencyRows,
+  CITATIONS,
+} from "@/lib/competency-framework";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -15,14 +24,6 @@ interface NavItem {
   label: string;
   href: string;
   badge?: number;
-}
-
-interface CompetencyRow {
-  name: string;
-  cvScore: number;
-  interviewScore: number;
-  finalScore: number;
-  weight: number;
 }
 
 interface EvidenceItem {
@@ -50,7 +51,7 @@ interface HiringReport {
   interviewScore: number;
   finalScore: number;
   confidence: number;
-  competencies: CompetencyRow[];
+  competencies: ReturnType<typeof buildReportCompetencyRows>;
   strengths: EvidenceItem[];
   developmentAreas: EvidenceItem[];
   panel: PanelMember[];
@@ -88,46 +89,39 @@ const CANDIDATE_REPORTS: HiringReport[] = [
     interviewScore: 89,
     finalScore: 91,
     confidence: 96,
-    competencies: [
-      { name: "Technical Skills", cvScore: 88, interviewScore: 85, finalScore: 87, weight: 15 },
-      { name: "Leadership", cvScore: 94, interviewScore: 92, finalScore: 93, weight: 20 },
-      { name: "Communication", cvScore: 95, interviewScore: 93, finalScore: 94, weight: 20 },
-      { name: "Ownership", cvScore: 91, interviewScore: 88, finalScore: 90, weight: 15 },
-      { name: "Strategic Thinking", cvScore: 90, interviewScore: 87, finalScore: 89, weight: 15 },
-      { name: "Execution", cvScore: 93, interviewScore: 90, finalScore: 92, weight: 15 },
-    ],
+    competencies: buildReportCompetencyRows("C-1042"),
     strengths: [
       {
-        title: "Executive stakeholder management",
+        title: "Credible Activist — stakeholder influence",
         quote:
           "Led quarterly business reviews with C-suite; secured $4.2M incremental roadmap investment through data-driven prioritization.",
         source: "CV Analysis · Panel Interview",
       },
       {
-        title: "Cross-functional leadership at scale",
+        title: "Rekrutmen & Seleksi — structured hiring",
         quote:
-          "Managed 3 product squads across engineering and design; reduced cycle time 28% while maintaining NPS above 72.",
-        source: "CV Analysis",
+          "Designed competency-based selection with structured interview rubrics; quality-of-hire metrics improved 22%.",
+        source: "CV Analysis · SKKNI Rekrutmen",
       },
       {
-        title: "Clear product vision under ambiguity",
+        title: "HR Innovator & Integrator",
         quote:
-          "Articulated 18-month platform strategy with explicit trade-offs; panel noted exceptional clarity in case presentation.",
-        source: "Final Panel · M. Torres",
+          "Integrated onboarding with selection criteria; panel rated strategic alignment 4.5/5.",
+        source: "Structured Interview · M. Torres",
       },
     ],
     developmentAreas: [
       {
-        title: "Deep technical architecture fluency",
+        title: "Hubungan Industrial — limited PK exposure",
         quote:
-          "System design response adequate but lacked depth on distributed consistency patterns expected at Staff-adjacent scope.",
-        source: "Technical Interview · J. Patel",
+          "Minimal Bipartit case examples; validate against SKKNI Hubungan Industrial rubric.",
+        source: "Behavioral Interview",
       },
       {
-        title: "People management tenure",
+        title: "Technology Proponent depth",
         quote:
-          "Direct reports for 14 months only; validate coaching examples and performance management experience.",
-        source: "Leadership Interview · HR Partner",
+          "People analytics usage described at high level; probe dashboard design in next round.",
+        source: "Technical Interview · J. Patel",
       },
     ],
     panel: [
@@ -138,7 +132,7 @@ const CANDIDATE_REPORTS: HiringReport[] = [
     ],
     consensus: "Strong Hire",
     consensusNote:
-      "Unanimous panel alignment on hire decision. Minor technical depth gap offset by leadership and communication excellence. Recommend L6 offer at top of band.",
+      "Panel consensus: Strong Hire. Ulrich Credible Activist + SKKNI Rekrutmen scores drive decision. Structured interview evidence (r ≈ 0.51) supports offer at top of band.",
   },
   {
     id: "RPT-20260521-MW02",
@@ -152,45 +146,38 @@ const CANDIDATE_REPORTS: HiringReport[] = [
     interviewScore: 84,
     finalScore: 86,
     confidence: 91,
-    competencies: [
-      { name: "Technical Skills", cvScore: 94, interviewScore: 90, finalScore: 92, weight: 25 },
-      { name: "Leadership", cvScore: 82, interviewScore: 78, finalScore: 80, weight: 15 },
-      { name: "Communication", cvScore: 85, interviewScore: 82, finalScore: 84, weight: 15 },
-      { name: "Ownership", cvScore: 90, interviewScore: 86, finalScore: 88, weight: 15 },
-      { name: "Strategic Thinking", cvScore: 84, interviewScore: 80, finalScore: 82, weight: 15 },
-      { name: "Execution", cvScore: 88, interviewScore: 85, finalScore: 87, weight: 15 },
-    ],
+    competencies: buildReportCompetencyRows("C-1038"),
     strengths: [
       {
-        title: "Platform architecture expertise",
+        title: "Technology Proponent — systems depth",
         quote:
           "Designed event-driven migration serving 12M daily users; documented failure modes and rollback strategy comprehensively.",
         source: "CV Analysis · System Design",
       },
       {
-        title: "Reliable execution track record",
+        title: "Capability Builder — technical pipeline",
         quote:
-          "Reduced P1 incident MTTR 40%; owned on-call rotation and post-mortem culture for 2 years.",
-        source: "CV Analysis",
+          "Built engineering competency framework; work-sample assessments adopted org-wide.",
+        source: "CV Analysis · Ulrich",
       },
       {
-        title: "Strong technical interview performance",
+        title: "Rekrutmen & Seleksi",
         quote:
-          "Whiteboard session rated 4.5/5; demonstrated depth on caching, sharding, and observability trade-offs.",
-        source: "Technical Interview · J. Patel",
+          "Structured technical interview scored 4.5/5 against SKKNI rubric.",
+        source: "Interview · J. Patel",
       },
     ],
     developmentAreas: [
       {
-        title: "Leadership scope for Staff level",
+        title: "Strategic Positioner — org-wide scope",
         quote:
-          "Influence examples skew technical; limited evidence of org-wide initiative leadership beyond immediate team.",
+          "Influence primarily team-level; limited enterprise workforce planning examples.",
         source: "Leadership Interview",
       },
       {
-        title: "Executive communication polish",
+        title: "Change Champion",
         quote:
-          "Stakeholder update narrative functional but less concise than bar for Staff+ cross-org presentations.",
+          "Change adoption metrics weak in behavioral responses; 6-month development plan recommended.",
         source: "Panel Debrief",
       },
     ],
@@ -215,17 +202,10 @@ const CANDIDATE_REPORTS: HiringReport[] = [
     interviewScore: 72,
     finalScore: 70,
     confidence: 78,
-    competencies: [
-      { name: "Technical Skills", cvScore: 78, interviewScore: 80, finalScore: 79, weight: 25 },
-      { name: "Leadership", cvScore: 62, interviewScore: 65, finalScore: 64, weight: 15 },
-      { name: "Communication", cvScore: 70, interviewScore: 74, finalScore: 72, weight: 15 },
-      { name: "Ownership", cvScore: 65, interviewScore: 70, finalScore: 68, weight: 15 },
-      { name: "Strategic Thinking", cvScore: 60, interviewScore: 68, finalScore: 64, weight: 15 },
-      { name: "Execution", cvScore: 66, interviewScore: 72, finalScore: 69, weight: 15 },
-    ],
+    competencies: buildReportCompetencyRows("C-1024"),
     strengths: [
       {
-        title: "Security domain depth",
+        title: "Technology Proponent — security systems",
         quote:
           "Implemented zero-trust segmentation reducing attack surface; CISSP with 9 years in fintech security.",
         source: "CV Analysis",
@@ -245,16 +225,16 @@ const CANDIDATE_REPORTS: HiringReport[] = [
     ],
     developmentAreas: [
       {
-        title: "Regulated industry experience gap",
+        title: "Perencanaan SDM — strategic workforce plan",
         quote:
-          "Limited direct PCI-DSS / SOC 2 program ownership; ramp time estimated 4–6 months for our environment.",
-        source: "Technical Interview · R. Singh",
+          "90-day plan generic vs SKKNI Perencanaan SDM bar; lacks scenario-based workforce planning.",
+        source: "Panel Interview",
       },
       {
-        title: "Strategic roadmap articulation",
+        title: "HR Innovator integration",
         quote:
-          "90-day plan generic; lacked company-specific threat model and prioritization framework.",
-        source: "Panel Interview",
+          "Selection and development practices not integrated; recommend follow-up structured case.",
+        source: "Technical Interview · R. Singh",
       },
     ],
     panel: [
@@ -787,8 +767,9 @@ function ScoreSummary({ report }: { report: HiringReport }) {
         ))}
       </div>
       <p className="mt-2 text-xs text-slate-400">
-        Final score = 40% CV analysis + 60% interview performance (role-weighted competencies)
+        Final = 40% CV + 60% structured interview · Ulrich (6) + SKKNI (5) weighted framework
       </p>
+      <CitationNote>{CITATIONS.schmidtHunter}</CitationNote>
     </section>
   );
 }
@@ -801,87 +782,10 @@ function CompetencyTable({ report }: { report: HiringReport }) {
           Competency breakdown
         </h3>
         <p className="mt-0.5 text-sm text-slate-500">
-          CV vs interview scores with weighted final per dimension
+          Ulrich HR model + SKKNI No. 149/2020 — CV vs structured interview
         </p>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[640px] text-left text-sm">
-          <caption className="sr-only">Competency scores by source</caption>
-          <thead>
-            <tr className="border-b border-slate-200 bg-slate-50/90 dark:border-slate-800 dark:bg-slate-800/60">
-              <th className="px-5 py-3 font-medium text-slate-500">Competency</th>
-              <th className="px-5 py-3 text-right font-medium text-slate-500">CV score</th>
-              <th className="px-5 py-3 text-right font-medium text-slate-500">
-                Interview
-              </th>
-              <th className="px-5 py-3 text-right font-medium text-slate-500">Final</th>
-              <th className="px-5 py-3 text-right font-medium text-slate-500">Weight</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-            {report.competencies.map((row) => (
-              <tr
-                key={row.name}
-                className="transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
-              >
-                <td className="px-5 py-3.5 font-medium text-slate-900 dark:text-white">
-                  {row.name}
-                </td>
-                <td
-                  className={cn(
-                    "px-5 py-3.5 text-right font-semibold tabular-nums",
-                    scoreColor(row.cvScore),
-                  )}
-                >
-                  {row.cvScore}
-                </td>
-                <td
-                  className={cn(
-                    "px-5 py-3.5 text-right font-semibold tabular-nums",
-                    scoreColor(row.interviewScore),
-                  )}
-                >
-                  {row.interviewScore}
-                </td>
-                <td className="px-5 py-3.5 text-right">
-                  <span
-                    className={cn(
-                      "inline-flex min-w-[2.5rem] justify-center rounded-md px-2 py-0.5 font-bold tabular-nums",
-                      row.finalScore >= 85
-                        ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"
-                        : row.finalScore >= 75
-                          ? "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400"
-                          : "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400",
-                    )}
-                  >
-                    {row.finalScore}
-                  </span>
-                </td>
-                <td className="px-5 py-3.5 text-right tabular-nums text-slate-500">
-                  {row.weight}%
-                </td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr className="border-t border-slate-200 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-800/30">
-              <td className="px-5 py-3 font-semibold text-slate-900 dark:text-white">
-                Weighted average
-              </td>
-              <td className="px-5 py-3 text-right font-bold tabular-nums text-slate-700 dark:text-slate-300">
-                {report.cvScore}
-              </td>
-              <td className="px-5 py-3 text-right font-bold tabular-nums text-slate-700 dark:text-slate-300">
-                {report.interviewScore}
-              </td>
-              <td className="px-5 py-3 text-right font-bold tabular-nums text-blue-600 dark:text-blue-400">
-                {report.finalScore}
-              </td>
-              <td className="px-5 py-3 text-right text-slate-400">100%</td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
+      <CompetencyReportTable rows={report.competencies} />
     </Card>
   );
 }
@@ -1147,6 +1051,7 @@ export default function ReportPage() {
             </div>
 
             <ReportHeader report={report} />
+            <EvidenceValidityPanel />
             <ScoreSummary report={report} />
             <CompetencyTable report={report} />
             <KeyEvidence report={report} />

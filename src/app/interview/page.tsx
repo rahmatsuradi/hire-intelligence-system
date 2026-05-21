@@ -1,5 +1,17 @@
 "use client";
 
+import {
+  CitationNote,
+  EvidenceValidityPanel,
+  FrameworkPillarBadge,
+  RubricTable,
+} from "@/components/competency-framework-ui";
+import {
+  CITATIONS,
+  COMPETENCY_BY_ID,
+  INTERVIEW_TYPE_MAP,
+  type RubricLevel,
+} from "@/lib/competency-framework";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -24,15 +36,11 @@ interface NavItem {
   badge?: number;
 }
 
-interface RubricLevel {
-  score: number;
-  label: string;
-  description: string;
-}
-
 interface InterviewQuestion {
   id: string;
   type: InterviewType;
+  competencyId: string;
+  competencyName: string;
   question: string;
   strongAnswer: string;
   redFlags: string[];
@@ -109,13 +117,9 @@ const TYPE_STYLES: Record<
   },
 };
 
-const DEFAULT_RUBRIC: RubricLevel[] = [
-  { score: 1, label: "Insufficient", description: "No relevant evidence; vague or off-topic response." },
-  { score: 2, label: "Below bar", description: "Limited examples; gaps in depth or ownership." },
-  { score: 3, label: "Meets bar", description: "Adequate STAR/technical depth for level; some gaps." },
-  { score: 4, label: "Exceeds bar", description: "Strong, specific examples with clear impact and reflection." },
-  { score: 5, label: "Exceptional", description: "Outstanding depth; teaches interviewer; role-model signal." },
-];
+function rubricFor(id: string): RubricLevel[] {
+  return COMPETENCY_BY_ID[id]?.rubric ?? [];
+}
 
 function buildMockQuestions(
   position: string,
@@ -126,110 +130,94 @@ function buildMockQuestions(
     {
       id: "B1",
       type: "Behavioral",
-      question: `Tell me about a time you had to deliver ${position} outcomes under a tight deadline with incomplete requirements. What did you do?`,
+      competencyId: "ulrich-credible-activist",
+      competencyName: "Credible Activist",
+      question: `Ceritakan situasi di mana Anda membela keputusan berbasis data terhadap manajemen senior terkait ${position}. Apa hasilnya?`,
       strongAnswer:
-        "Uses STAR format with specific timeline, stakeholder alignment tactic, trade-off decision, and measurable outcome. Acknowledges what they would do differently.",
-      redFlags: [
-        "Blames others for ambiguity without describing own actions",
-        "No quantified result or scope of impact",
-        "Cannot articulate decision criteria under pressure",
-      ],
-      rubric: DEFAULT_RUBRIC,
+        "STAR format; ethical framing; measurable influence on decision; maintains relationships.",
+      redFlags: ["Avoids conflict", "No data cited", "Damages trust with stakeholders"],
+      rubric: rubricFor("ulrich-credible-activist"),
     },
     {
       id: "B2",
       type: "Behavioral",
+      competencyId: "skkni-hubungan-industrial",
+      competencyName: "Hubungan Industrial",
       question:
-        "Describe a situation where you received critical feedback that changed how you work. How did you respond?",
+        "Bagaimana Anda menangani situasi ketenagakerjaan sensitif (mis. PK/Bipartit atau kepatuhan UU Ketenagakerjaan)?",
       strongAnswer:
-        "Shows humility, concrete behavior change, follow-up with feedback giver, and sustained improvement over time.",
-      redFlags: [
-        "Defensive framing or dismisses feedback as unfair",
-        "Generic answer with no behavior change examples",
-        "Places responsibility entirely on manager or team",
-      ],
-      rubric: DEFAULT_RUBRIC,
+        "References Indonesian labor law basics; mediation steps; documentation; escalation path.",
+      redFlags: ["Unaware of PK/Bipartit", "Reactive only", "Non-compliance risk"],
+      rubric: rubricFor("skkni-hubungan-industrial"),
     },
     {
       id: "T1",
       type: "Technical",
-      question: `For a ${seniority} ${position}, walk us through how you would design a system that must handle 10x traffic growth in 12 months.`,
+      competencyId: "ulrich-technology-proponent",
+      competencyName: "Technology Proponent",
+      question: `Sebagai ${seniority} ${position}, bagaimana Anda menggunakan people analytics untuk keputusan SDM?`,
       strongAnswer:
-        "Covers requirements gathering, bottlenecks, scaling axes (vertical/horizontal), data model, observability, failure modes, and phased rollout with success metrics.",
-      redFlags: [
-        "Jumps to tools without clarifying constraints",
-        "Ignores monitoring, rollback, or operational concerns",
-        "Cannot reason about trade-offs at stated seniority level",
-      ],
-      rubric: DEFAULT_RUBRIC,
+        "Specific metrics, dashboards, decision changed by data; validity-aware (work sample r ≈ 0.54).",
+      redFlags: ["No metrics", "Manual-only HR", "Cannot explain analytics logic"],
+      rubric: rubricFor("ulrich-technology-proponent"),
     },
     {
       id: "T2",
       type: "Technical",
+      competencyId: "skkni-rekrutmen",
+      competencyName: "Rekrutmen & Seleksi",
       question:
-        "Tell us about the most complex technical problem you solved in the last year. What was your specific contribution?",
+        "Jelaskan proses seleksi terstruktur yang pernah Anda desain — kriteria kompetensi, rubrik, dan validitas prediktif.",
       strongAnswer:
-        "Clear problem statement, constraints, alternatives considered, personal contribution vs. team, and post-mortem learnings.",
-      redFlags: [
-        "Only describes team success without individual ownership",
-        "Overstates contribution when probed on details",
-        "No discussion of failure modes or maintenance burden",
-      ],
-      rubric: DEFAULT_RUBRIC,
+        "Structured interview guide; competency rubrics; avoids unstructured bias (r ≈ 0.38).",
+      redFlags: ["Ad-hoc interviews only", "No scoring rubric", "Discrimination risk"],
+      rubric: rubricFor("skkni-rekrutmen"),
     },
     {
       id: "L1",
       type: "Leadership",
-      question: `How do you set direction and priorities for your team when stakeholders disagree on the ${position} roadmap?`,
+      competencyId: "ulrich-strategic-positioner",
+      competencyName: "Strategic Positioner",
+      question: `Bagaimana Anda menyelaraskan rencana SDM dengan strategi bisnis untuk ${position}?`,
       strongAnswer:
-        "Demonstrates facilitation, transparent decision framework, communication plan, and how dissent is incorporated or documented.",
-      redFlags: [
-        "Top-down mandates without stakeholder buy-in process",
-        "Avoids conflict; no examples of saying no",
-        "Cannot describe how team understands the 'why'",
-      ],
-      rubric: DEFAULT_RUBRIC,
+        "Workforce plan linked to KPIs; scenario planning; executive alignment.",
+      redFlags: ["HR siloed from strategy", "No KPI link", "Cannot articulate business case"],
+      rubric: rubricFor("ulrich-strategic-positioner"),
     },
     {
       id: "L2",
       type: "Leadership",
+      competencyId: "skkni-kinerja",
+      competencyName: "Manajemen Kinerja",
       question:
-        "Give an example of developing someone on your team who was underperforming. What was the outcome?",
+        "Berikan contoh siklus manajemen kinerja yang Anda pimpin — KPI, feedback, dan tindak lanjut.",
       strongAnswer:
-        "Structured coaching plan, clear expectations, check-ins, resources provided, timeline, and honest outcome (success or managed transition).",
-      redFlags: [
-        "Terminated quickly without development effort (unless role requires)",
-        "Takes credit for team member's growth without specifics",
-        "No empathy or consideration of context",
-      ],
-      rubric: DEFAULT_RUBRIC,
+        "Full cycle documented; coaching for low performers; reward linkage fair.",
+      redFlags: ["Paper exercise only", "No follow-up coaching", "Unfair ratings"],
+      rubric: rubricFor("skkni-kinerja"),
     },
     {
       id: "C1",
       type: "Cultural Fit",
+      competencyId: "ulrich-credible-activist",
+      competencyName: "Credible Activist",
       question:
-        "What type of work environment brings out your best performance, and where do you see misalignment risk with our culture?",
+        "Nilai keselarasan nilai Anda dengan budaya perusahaan kami — apa potensi gesekan dan mitigasinya?",
       strongAnswer:
-        "Self-aware answer linking values to examples; names potential friction honestly with mitigation ideas; asks clarifying questions about team norms.",
-      redFlags: [
-        "Generic 'I adapt to anything' with no examples",
-        "Criticizes past employers excessively",
-        "Values misaligned with collaborative, feedback-rich environment",
-      ],
-      rubric: DEFAULT_RUBRIC,
+        "Honest self-assessment; examples; asks about norms; credible activist tone.",
+      redFlags: ["Generic answer", "Blames past employers", "Misaligned values"],
+      rubric: rubricFor("ulrich-credible-activist"),
     },
     {
       id: "C2",
       type: "Cultural Fit",
-      question: `Why this ${position} role at our company now, and what will you need to be successful in the first 90 days?`,
+      competencyId: "skkni-perencanaan",
+      competencyName: "Perencanaan SDM",
+      question: `Mengapa ${position} di perusahaan kami sekarang — rencana 90 hari pertama Anda?`,
       strongAnswer:
-        "Research-backed motivation, realistic 30/60/90 plan, identifies relationships to build, and learning goals—not only deliverables.",
-      redFlags: [
-        "Focuses primarily on compensation or title",
-        "No company-specific research",
-        "Unrealistic 90-day promises without discovery phase",
-      ],
-      rubric: DEFAULT_RUBRIC,
+        "SKKNI-aligned workforce planning hooks; 30/60/90 with learning goals.",
+      redFlags: ["Title/comp only motivation", "No research", "Unrealistic plan"],
+      rubric: rubricFor("skkni-perencanaan"),
     },
   ];
 
@@ -242,12 +230,12 @@ function buildInterviewerNotes(
   types: InterviewType[],
 ): string[] {
   return [
-    `Calibrate expectations to ${seniority} bar before scoring Technical and Leadership responses.`,
-    `Allocate ~${Math.max(45, types.length * 15)} minutes: probe depth on ${types.join(", ")} sections.`,
-    `For ${position}, weight ownership and cross-functional influence if level is Senior or above.`,
-    "Leave 10 minutes at end for candidate questions; note quality and relevance of their questions.",
-    "Document verbatim quotes for any score of 4+ or any red-flag signal for debrief consistency.",
-    "If two interviewers are present, split note-taking by question block to avoid gaps.",
+    `Use structured interviews only (Schmidt & Hunter, 1998: r ≈ 0.51) — avoid unstructured ad-hoc questions (r ≈ 0.38).`,
+    `Calibrate to ${seniority} bar using Ulrich + SKKNI rubrics per question.`,
+    `Allocate ~${Math.max(45, types.length * 15)} minutes across: ${types.join(", ")}.`,
+    `Map scores to competencies: ${types.flatMap((t) => INTERVIEW_TYPE_MAP[t]).join(", ")}.`,
+    `For ${position}, supplement with work samples where possible (r ≈ 0.54).`,
+    "Document verbatim quotes for scores ≥4 or any red-flag; reference checks supplementary only (r ≈ 0.26).",
   ];
 }
 
@@ -638,6 +626,9 @@ function QuestionCard({ q, index }: { q: InterviewQuestion; index: number }) {
           >
             {q.type}
           </span>
+          <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
+            {q.competencyName}
+          </span>
         </div>
         <p className="mt-3 text-sm font-semibold leading-relaxed text-slate-900 dark:text-white">
           {q.question}
@@ -670,39 +661,17 @@ function QuestionCard({ q, index }: { q: InterviewQuestion; index: number }) {
         </div>
 
         <div>
-          <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            <Icon className="h-4 w-4">
-              <SvgPath name="star" />
-            </Icon>
-            Scoring rubric (1–5)
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Research-based rubric (1–5)
+            </span>
+            <FrameworkPillarBadge
+              pillar={
+                q.competencyId.startsWith("skkni") ? "skkni" : "ulrich"
+              }
+            />
           </div>
-          <div className="mt-2 overflow-x-auto">
-            <table className="w-full min-w-[400px] text-left text-xs">
-              <thead>
-                <tr className="border-b border-slate-200 dark:border-slate-700">
-                  <th className="py-2 pr-3 font-medium text-slate-500">Score</th>
-                  <th className="py-2 pr-3 font-medium text-slate-500">Level</th>
-                  <th className="py-2 font-medium text-slate-500">Criteria</th>
-                </tr>
-              </thead>
-              <tbody>
-                {q.rubric.map((r) => (
-                  <tr
-                    key={r.score}
-                    className="border-b border-slate-100 last:border-0 dark:border-slate-800"
-                  >
-                    <td className="py-2 pr-3 font-bold tabular-nums text-slate-900 dark:text-white">
-                      {r.score}
-                    </td>
-                    <td className="py-2 pr-3 font-medium text-slate-700 dark:text-slate-300">
-                      {r.label}
-                    </td>
-                    <td className="py-2 text-slate-600 dark:text-slate-400">{r.description}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <RubricTable rubric={q.rubric} compact />
         </div>
       </div>
     </article>
@@ -726,6 +695,8 @@ function ResultsPanel({ pack }: { pack: QuestionPack }) {
 
   return (
     <div className="space-y-6">
+      <EvidenceValidityPanel />
+
       <Card className="overflow-hidden p-0">
         <div className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-indigo-50/50 px-5 py-4 dark:border-slate-800 dark:from-slate-900 dark:to-indigo-500/5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -821,8 +792,9 @@ function ResultsPanel({ pack }: { pack: QuestionPack }) {
           </h3>
         </div>
         <p className="mt-0.5 text-sm text-slate-500">
-          Panel guidance for consistent evaluation
+          Panel guidance — Ulrich + SKKNI aligned evaluation
         </p>
+        <CitationNote>{CITATIONS.ulrich}</CitationNote>
         <ul className="mt-4 space-y-2">
           {pack.interviewerNotes.map((note, i) => (
             <li
@@ -1037,7 +1009,7 @@ export default function InterviewPage() {
                     <div>
                       <Label>Interview type</Label>
                       <p className="mb-2 text-xs text-slate-500">
-                        Select one or more — 2 questions per type
+                        Select types — 2 questions each, mapped to Ulrich / SKKNI
                       </p>
                       <div
                         className="grid grid-cols-1 gap-2 sm:grid-cols-2"

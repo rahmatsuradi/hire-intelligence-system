@@ -1,5 +1,15 @@
 "use client";
 
+import {
+  CitationNote,
+  CompetencyScoreList,
+  EvidenceValidityPanel,
+} from "@/components/competency-framework-ui";
+import {
+  buildCvCompetencyScores,
+  CITATIONS,
+  type CompetencyScore,
+} from "@/lib/competency-framework";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -16,13 +26,6 @@ interface NavItem {
   label: string;
   href: string;
   badge?: number;
-}
-
-interface CompetencyScore {
-  name: string;
-  score: number;
-  benchmark: number;
-  insight: string;
 }
 
 interface RiskFlag {
@@ -82,45 +85,8 @@ const MOCK_REPORT: Omit<AnalysisReport, "reportId" | "generatedAt"> = {
   matchScore: 88,
   processingMs: 2840,
   summary:
-    "Candidate demonstrates strong technical depth and cross-functional leadership aligned with the target role. Communication and strategic thinking exceed department benchmarks. Minor gaps in tenure at current organization and limited people-management scope warrant targeted interview validation.",
-  competencies: [
-    {
-      name: "Technical Skills",
-      score: 91,
-      benchmark: 82,
-      insight: "8+ years across distributed systems; led platform migration at scale.",
-    },
-    {
-      name: "Leadership",
-      score: 84,
-      benchmark: 78,
-      insight: "Managed team of 6; mentored 4 engineers to promotion.",
-    },
-    {
-      name: "Communication",
-      score: 88,
-      benchmark: 85,
-      insight: "Executive stakeholder presentations; published internal tech blog.",
-    },
-    {
-      name: "Ownership",
-      score: 90,
-      benchmark: 80,
-      insight: "End-to-end delivery on critical revenue path; on-call lead.",
-    },
-    {
-      name: "Strategic Thinking",
-      score: 82,
-      benchmark: 79,
-      insight: "Roadmap input for 18-month platform vision; cost optimization initiative.",
-    },
-    {
-      name: "Execution",
-      score: 87,
-      benchmark: 81,
-      insight: "Consistent sprint delivery; reduced incident MTTR by 40%.",
-    },
-  ],
+    "Candidate profiles strongly against the Ulrich HR competency model and SKKNI No. 149/2020 dimensions. Highest signals on Capability Builder, HR Innovator, and Rekrutmen & Seleksi. Use structured interviews (r ≈ 0.51) to validate Hubungan Industrial and Change Champion gaps before final offer.",
+  competencies: buildCvCompetencyScores(),
   risks: [
     {
       id: "R1",
@@ -144,42 +110,44 @@ const MOCK_REPORT: Omit<AnalysisReport, "reportId" | "generatedAt"> = {
   questions: [
     {
       id: 1,
-      category: "Leadership",
+      category: "Credible Activist · Hubungan Industrial",
       question:
-        "Describe a situation where you had to influence a senior stakeholder without direct authority. What was the outcome?",
-      rationale: "Validates leadership score and cross-functional communication claims.",
+        "Ceritakan situasi di mana Anda harus membela keputusan berbasis data kepada manajemen senior. Bagaimana hasilnya?",
+      rationale:
+        "Structured behavioral probe (r ≈ 0.51) for Ulrich Credible Activist & SKKNI Hubungan Industrial.",
     },
     {
       id: 2,
-      category: "Technical",
+      category: "Technology Proponent · Rekrutmen",
       question:
-        "Walk us through the architecture decisions behind your largest platform migration. What trade-offs did you make?",
-      rationale: "Probes depth behind high technical skills assessment.",
+        "Bagaimana Anda menggunakan people analytics atau work sample untuk meningkatkan kualitas rekrutmen di organisasi sebelumnya?",
+      rationale:
+        "Aligns with work-sample validity (r ≈ 0.54) and SKKNI Rekrutmen & Seleksi.",
     },
     {
       id: 3,
-      category: "Ownership",
+      category: "Capability Builder",
       question:
-        "Tell us about a production incident you owned end-to-end. How did you prevent recurrence?",
-      rationale: "Confirms execution and ownership competency signals.",
+        "Jelaskan sistem pengembangan kompetensi yang pernah Anda bangun — dari TNA hingga evaluasi dampak.",
+      rationale: "Validates Ulrich Capability Builder & SKKNI Pengembangan Kompetensi.",
     },
     {
       id: 4,
-      category: "Strategic",
+      category: "Strategic Positioner",
       question:
-        "How would you approach your first 90 days in this role given our current product roadmap priorities?",
-      rationale: "Tests strategic thinking fit for target position.",
+        "Bagaimana rencana SDM Anda selaras dengan strategi bisnis unit dalam 12 bulan terakhir?",
+      rationale: "SKKNI Perencanaan SDM & Ulrich Strategic Positioner integration.",
     },
     {
       id: 5,
       category: "Risk validation",
       question:
-        "What prompted your interest in leaving your current role after 14 months, and what are you looking for in your next position?",
-      rationale: "Directly addresses tenure and retention risk flag.",
+        "Apa alasan transisi setelah 14 bulan di peran saat ini, dan ekspektasi Anda terhadap peran berikutnya?",
+      rationale: "Retention risk flag — avoid unstructured follow-up (r ≈ 0.38).",
     },
   ],
   recommendationDetail:
-    "Proceed to panel interview. Candidate profile aligns strongly with role requirements. Recommend panel focus on people-management scope and domain onboarding plan. Offer band: L6 — top of range pending reference checks.",
+    "Proceed to structured panel interview per Schmidt & Hunter (1998). Weight SKKNI Rekrutmen & Seleksi and Ulrich HR Innovator scores highest. Validate Hubungan Industrial gap with behavioral rubric before offer.",
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -793,64 +761,21 @@ function AnalysisReportPanel({
         </div>
       </Card>
 
+      <EvidenceValidityPanel />
+
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Competency scores */}
         <Card>
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-                Competency Assessment
-              </h3>
-              <p className="mt-0.5 text-sm text-slate-500">
-                Scores vs. role benchmark (0–100)
-              </p>
-            </div>
+          <div>
+            <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+              Competency Assessment
+            </h3>
+            <p className="mt-0.5 text-sm text-slate-500">
+              Ulrich (6) + SKKNI (5) · scores vs. role benchmark (0–100)
+            </p>
           </div>
-          <ul className="mt-5 space-y-5">
-            {report.competencies.map((comp) => {
-              const above = comp.score >= comp.benchmark;
-              return (
-                <li key={comp.name}>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                      {comp.name}
-                    </span>
-                    <div className="flex items-center gap-2 tabular-nums">
-                      <span className="text-sm font-bold text-slate-900 dark:text-white">
-                        {comp.score}
-                      </span>
-                      <span className="text-xs text-slate-400">/ {comp.benchmark}</span>
-                      <span
-                        className={cn(
-                          "text-xs font-medium",
-                          above
-                            ? "text-emerald-600 dark:text-emerald-400"
-                            : "text-amber-600 dark:text-amber-400",
-                        )}
-                      >
-                        {above ? "+" : ""}
-                        {comp.score - comp.benchmark}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="relative mt-2 h-2.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                    <div
-                      className={cn("h-full rounded-full", scoreColor(comp.score))}
-                      style={{ width: `${comp.score}%` }}
-                    />
-                    <div
-                      className="absolute inset-y-0 w-0.5 bg-slate-500"
-                      style={{ left: `${comp.benchmark}%` }}
-                      title={`Benchmark: ${comp.benchmark}`}
-                    />
-                  </div>
-                  <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
-                    {comp.insight}
-                  </p>
-                </li>
-              );
-            })}
-          </ul>
+          <div className="mt-5">
+            <CompetencyScoreList scores={report.competencies} />
+          </div>
         </Card>
 
         {/* Risk flags */}
@@ -904,9 +829,13 @@ function AnalysisReportPanel({
               Structured Interview Questions
             </h3>
             <p className="mt-0.5 text-sm text-slate-500">
-              AI-generated probes mapped to competency gaps and risk flags
+              Structured probes mapped to Ulrich / SKKNI gaps (r ≈ 0.51)
             </p>
           </div>
+          <CitationNote className="mt-2 px-0">
+            {CITATIONS.schmidtHunter} Prefer structured over unstructured interviews (r ≈
+            0.38).
+          </CitationNote>
           <Button variant="secondary" size="sm">
             <Icon className="h-4 w-4">
               <SvgPath name="download" />
