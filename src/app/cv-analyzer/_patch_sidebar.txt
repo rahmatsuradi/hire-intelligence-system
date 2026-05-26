@@ -1,0 +1,2 @@
+            <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">Powered by Groq · Llama 3.3</p>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Upload PDF resumes for real-time competency scoring and interview guides.</p>
