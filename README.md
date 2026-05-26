@@ -1,4 +1,4 @@
-# Hire Intelligence System
+# Hire Intelligence System for HR
 
 **AI-powered hiring platform** untuk analisis CV berbasis kompetensi, dirancang khusus untuk konteks HR Indonesia.
 
