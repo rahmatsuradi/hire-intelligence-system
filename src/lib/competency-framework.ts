@@ -3,9 +3,11 @@
    — Ulrich HR Competency Model (2012)
    — Evidence-based selection validity (Schmidt & Hunter, 1998)
    — SKKNI No. 149/2020 (Indonesian HR national work competency standards)
+   — Extended: SFIA v8, Lominger, CGMA (multi-framework support)
 ═══════════════════════════════════════════════════════════════════════════ */
 
-export type CompetencyPillar = "ulrich" | "skkni";
+// Extended to support multi-framework: ulrich, skkni, sfia, lominger, cgma
+export type CompetencyPillar = "ulrich" | "skkni" | "sfia" | "lominger" | "cgma" | string;
 
 export interface RubricLevel {
   score: number;
@@ -304,15 +306,12 @@ export const COMPETENCY_BY_ID = Object.fromEntries(
   ALL_COMPETENCY_DEFINITIONS.map((c) => [c.id, c]),
 ) as Record<string, CompetencyDefinition>;
 
-/** Interview type → primary Ulrich + SKKNI competencies probed */
 export const INTERVIEW_TYPE_MAP = {
   Behavioral: ["ulrich-credible-activist", "skkni-hubungan-industrial"],
   Technical: ["ulrich-technology-proponent", "ulrich-capability-builder", "skkni-rekrutmen"],
   Leadership: ["ulrich-strategic-positioner", "ulrich-change-champion", "skkni-kinerja"],
   "Cultural Fit": ["ulrich-credible-activist", "skkni-perencanaan"],
 } as const;
-
-/* ─── Mock score generators ─── */
 
 const CV_MOCK_SCORES: Record<string, { score: number; benchmark: number; insight: string }> = {
   "ulrich-credible-activist": { score: 88, benchmark: 82, insight: "Track record of ethical influence with senior stakeholders." },
@@ -411,7 +410,12 @@ export function getCompetencyRubric(competencyId: string): RubricLevel[] {
 }
 
 export function getPillarLabel(pillar: CompetencyPillar): string {
-  return pillar === "ulrich"
-    ? "Ulrich HR Competency Model"
-    : "SKKNI No. 149/2020 (Indonesia)";
+  const map: Record<string, string> = {
+    ulrich: "Ulrich HR Competency Model",
+    skkni: "SKKNI No. 149/2020 (Indonesia)",
+    sfia: "SFIA v8 — Skills Framework for Information Age",
+    lominger: "Lominger Leadership Architect (Korn Ferry)",
+    cgma: "CGMA Competency Framework (CIMA/AICPA)",
+  };
+  return map[pillar] ?? pillar;
 }
