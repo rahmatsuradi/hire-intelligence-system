@@ -1,1 +1,0 @@
-export type CompetencyPillar = "ulrich" | "skkni" | "sfia" | "lominger" | "cgma" | string;
