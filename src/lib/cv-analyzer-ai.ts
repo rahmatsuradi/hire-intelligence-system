@@ -1,17 +1,22 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   CV Analyzer AI — Prompt engineering + response parsing
-   Model: gemini-2.0-flash-lite (free tier)
+   CV Analyzer AI — Multi-framework competency analysis
+   Model: Groq Llama 3.3 70B
    
-   Token budget free tier: ~8,000 input tokens per request (aman)
-   CV text limit: 2,500 karakter (~625 tokens)
-   Framework + instructions: ~1,500 tokens
-   Total estimated: ~2,200 tokens — jauh di bawah limit
+   4 Cluster Framework (sesuai standar multinasional):
+   1. HR         → Ulrich (2012) + SKKNI No.149/2020
+   2. Tech       → SFIA v8 (Skills Framework for Information Age)
+   3. Business   → Lominger Leadership Architect (Korn Ferry)
+   4. Finance    → CGMA Competency Framework (CIMA/AICPA)
 ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── Types ─── */
+
+export type CompetencyCluster = "hr" | "tech" | "business" | "finance";
 
 export interface AiCompetencyScore {
   id: string;
   name: string;
-  pillar: "ulrich" | "skkni";
+  pillar: string; // flexible: "ulrich"|"skkni"|"sfia"|"lominger"|"cgma"
   score: number;
   rawLevel: number;
   benchmark: number;
@@ -45,12 +50,270 @@ export interface AiAnalysisResult {
   summary: string;
   recommendationDetail: string;
   processingNote: string;
+  cluster: CompetencyCluster;
+  frameworkLabel: string;
   competencies: AiCompetencyScore[];
   risks: AiRiskFlag[];
   questions: AiInterviewQuestion[];
 }
 
-/* ─── Prompt builder — compact version untuk free tier ─── */
+/* ═══════════════════════════════════════════════════════════════════════════
+   CLUSTER ROUTING — deteksi cluster dari posisi + departemen
+═══════════════════════════════════════════════════════════════════════════ */
+
+const TECH_KEYWORDS = [
+  "engineer", "engineering", "developer", "dev", "software", "backend", "frontend",
+  "fullstack", "full stack", "mobile", "android", "ios", "data", "analyst", "scientist",
+  "machine learning", "ml", "ai", "devops", "cloud", "security", "cyber", "infosec",
+  "product", "qa", "quality", "infrastructure", "platform", "architect", "sre",
+  "network", "database", "dba", "it", "tech", "teknologi", "sistem", "system",
+];
+
+const FINANCE_KEYWORDS = [
+  "finance", "financial", "accounting", "accountant", "akuntan", "keuangan",
+  "treasury", "tax", "pajak", "audit", "auditor", "controller", "cfo",
+  "investment", "banker", "banking", "legal", "hukum", "compliance", "risk",
+  "actuarial", "actuary", "budget", "cost", "procurement", "purchasing",
+];
+
+const HR_KEYWORDS = [
+  "hr", "human resource", "sumber daya manusia", "sdm", "hrd", "hrga",
+  "recruitment", "rekrutmen", "talent", "learning", "training", "compensation",
+  "benefit", "payroll", "industrial relation", "organizational", "organisasi",
+  "people", "culture", "engagement", "hrbp", "hr business partner",
+];
+
+export function detectCluster(position: string, department: string): CompetencyCluster {
+  const text = `${position} ${department}`.toLowerCase();
+
+  if (HR_KEYWORDS.some(k => text.includes(k))) return "hr";
+  if (TECH_KEYWORDS.some(k => text.includes(k))) return "tech";
+  if (FINANCE_KEYWORDS.some(k => text.includes(k))) return "finance";
+
+  // Default: business/MT untuk posisi umum
+  return "business";
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   FRAMEWORK DEFINITIONS
+═══════════════════════════════════════════════════════════════════════════ */
+
+const FRAMEWORK_HR = `
+FRAMEWORK: Ulrich HR Competency Model (2012) + SKKNI No.149/2020
+Reference: Ulrich et al. (2012); Kemnaker RI SKKNI 149/2020
+Score conversion: level 1→20, 2→40, 3→60, 4→80, 5→100
+
+ULRICH (6 kompetensi) — pillar: "ulrich":
+1. id:ulrich-credible-activist | Credible Activist | bench:80
+   Membangun kepercayaan melalui integritas, advokasi berani, pengaruh berbasis data
+   Level 1=lacks trust/ethics | 3=speaks up with evidence | 5=enterprise conscience shapes culture
+
+2. id:ulrich-strategic-positioner | Strategic Positioner | bench:78
+   Menyelaraskan keputusan HR dengan strategi bisnis dan competitive context
+   Level 1=no business link | 3=articulates KPI link | 5=co-creates business strategy
+
+3. id:ulrich-capability-builder | Capability Builder | bench:80
+   Membangun kapabilitas organisasi melalui talent architecture dan sistem pembelajaran
+   Level 1=no systems built | 3=uses competency frameworks | 5=transforms workforce capability
+
+4. id:ulrich-change-champion | Change Champion | bench:78
+   Memimpin dan mempertahankan perubahan organisasi dengan stakeholder engagement
+   Level 1=resists change | 3=executes with stakeholder map | 5=institutionalizes change capability
+
+5. id:ulrich-hr-innovator | HR Innovator & Integrator | bench:81
+   Mengintegrasikan praktik HR lintas rekrutmen, pengembangan, reward, dan budaya
+   Level 1=siloed HR | 3=connects 2+ HR levers with metrics | 5=industry-recognized innovator
+
+6. id:ulrich-technology-proponent | Technology Proponent | bench:83
+   Memanfaatkan teknologi HR, people analytics, dan alat digital untuk keputusan
+   Level 1=avoids data/systems | 3=analytics for decisions | 5=people analytics strategy
+
+SKKNI No.149/2020 (5 unit kompetensi) — pillar: "skkni":
+7. id:skkni-perencanaan | Perencanaan SDM | bench:80
+   Workforce planning strategis sesuai regulasi ketenagakerjaan Indonesia
+   Level 1=tidak memahami | 3=supply-demand + anggaran | 5=enterprise workforce planning
+
+8. id:skkni-rekrutmen | Rekrutmen & Seleksi | bench:85
+   Rekrutmen berbasis kompetensi, seleksi terstruktur, non-diskriminasi
+   Level 1=tidak terstruktur | 3=wawancara terstruktur + rubrik | 5=quality-of-hire metrics
+
+9. id:skkni-pengembangan | Pengembangan Kompetensi | bench:82
+   Training needs analysis, program pelatihan, evaluasi efektivitas Kirkpatrick
+   Level 1=tidak ada program | 3=TNA + evaluasi | 5=budaya pembelajaran terukur
+
+10. id:skkni-kinerja | Manajemen Kinerja | bench:79
+    KPI setting, performance review cycle, coaching, improvement plan
+    Level 1=tidak memahami siklus | 3=KPI + feedback rutin | 5=budaya kinerja berbasis data
+
+11. id:skkni-hubungan-industrial | Hubungan Industrial | bench:80
+    Hubungan industrial, kepatuhan UU Ketenagakerjaan No.13/2003, penyelesaian perselisihan
+    Level 1=pelanggaran/ketidaktahuan | 3=PK/Bipartit + mediasi | 5=zero major disputes
+
+Total: 11 kompetensi (6 Ulrich + 5 SKKNI)`.trim();
+
+const FRAMEWORK_TECH = `
+FRAMEWORK: SFIA v8 — Skills Framework for Information Age (2023)
+Reference: SFIA Foundation (sfia.org); globally recognized by Google, Microsoft, IBM, AWS
+Score conversion: level 1→20, 2→40, 3→60, 4→80, 5→100 (mapped from SFIA levels 1-7)
+
+SFIA CORE SKILLS (8 kompetensi) — pillar: "sfia":
+1. id:sfia-technical-proficiency | Technical Proficiency | bench:82
+   Penguasaan teknologi, bahasa pemrograman, tools, dan arsitektur yang relevan dengan posisi
+   Level 1=basic awareness | 3=applies independently, debugs effectively | 5=recognized expert, sets technical direction
+
+2. id:sfia-solution-architecture | Solution Architecture & Design | bench:78
+   Kemampuan merancang sistem, memilih tech stack, dan mempertimbangkan trade-offs
+   Level 1=follows existing patterns | 3=designs components with clear rationale | 5=designs enterprise-grade systems
+
+3. id:sfia-data-analytics | Data & Analytics Literacy | bench:80
+   Kemampuan bekerja dengan data: analisis, visualisasi, interpretasi, dan keputusan berbasis data
+   Level 1=reads basic reports | 3=builds dashboards, runs queries independently | 5=designs data strategy
+
+4. id:sfia-security-quality | Security & Quality Mindset | bench:79
+   Pemahaman keamanan sistem, testing, code quality, dan best practices
+   Level 1=unaware of security basics | 3=applies secure coding, writes tests | 5=drives security/quality culture
+
+5. id:sfia-delivery-agility | Delivery & Agile Execution | bench:81
+   Kemampuan deliver fitur/produk secara iteratif, bekerja dalam sprint, dan manage complexity
+   Level 1=struggles to estimate/deliver | 3=delivers consistently in agile environment | 5=shapes delivery methodology
+
+6. id:sfia-collaboration | Technical Collaboration & Communication | bench:77
+   Kemampuan berkolaborasi lintas tim, code review, dokumentasi teknis, dan komunikasi ke non-technical
+   Level 1=works in isolation | 3=effective in cross-functional teams | 5=multiplies team capability
+
+7. id:sfia-innovation | Innovation & Problem Solving | bench:80
+   Kemampuan mengidentifikasi masalah, propose solusi kreatif, dan berpikir first-principles
+   Level 1=follows prescribed solutions | 3=identifies root cause, proposes alternatives | 5=drives technical innovation
+
+8. id:sfia-learning-agility | Learning Agility & Tech Adaptability | bench:83
+   Kecepatan belajar teknologi baru, adaptasi terhadap perubahan landscape teknologi
+   Level 1=resists new tools | 3=learns new stack in reasonable time | 5=continuously at bleeding edge
+
+Total: 8 kompetensi SFIA`.trim();
+
+const FRAMEWORK_BUSINESS = `
+FRAMEWORK: Lominger Leadership Architect (Korn Ferry, 2014) — adapted for MT/Business roles
+Reference: Korn Ferry Lominger (kornferry.com); used by Fortune 500 for leadership selection
+Score conversion: level 1→20, 2→40, 3→60, 4→80, 5→100
+
+LOMINGER CORE COMPETENCIES (9 kompetensi) — pillar: "lominger":
+1. id:lom-strategic-agility | Strategic Agility | bench:80
+   Kemampuan berpikir jangka panjang, melihat tren, dan mengantisipasi perubahan bisnis
+   Level 1=purely tactical | 3=connects daily work to strategy | 5=shapes organizational direction
+
+2. id:lom-drive-results | Drive for Results | bench:85
+   Orientasi pada pencapaian, persistensi, dan kemampuan deliver hasil dalam kondisi sulit
+   Level 1=misses targets consistently | 3=meets targets, finds solutions to obstacles | 5=extraordinary results, raises the bar
+
+3. id:lom-learning-agility | Learning Agility | bench:82
+   Kecepatan belajar dari pengalaman baru, kesalahan, dan konteks yang tidak familiar
+   Level 1=repeats mistakes, fixed mindset | 3=learns quickly from varied experience | 5=thrives in first-time situations
+
+4. id:lom-interpersonal-savvy | Interpersonal Savvy & Influence | bench:78
+   Kemampuan membangun relasi, membaca dinamika sosial, dan mempengaruhi tanpa otoritas formal
+   Level 1=creates friction, tone-deaf | 3=builds rapport, navigates politics well | 5=trusted by all levels, high influence
+
+5. id:lom-problem-solving | Problem Solving & Decision Quality | bench:81
+   Kemampuan analisis masalah kompleks, integrasi data, dan keputusan berkualitas tinggi
+   Level 1=reactive, poor analysis | 3=systematic analysis, good decisions | 5=solves complex ambiguous problems
+
+6. id:lom-manages-ambiguity | Manages Ambiguity & Complexity | bench:79
+   Kemampuan bekerja efektif dalam ketidakpastian, multiple priorities, dan situasi yang berubah cepat
+   Level 1=paralyzed by uncertainty | 3=functions well in ambiguous situations | 5=thrives in chaos, creates order
+
+7. id:lom-collaborates | Collaboration & Teamwork | bench:80
+   Kemampuan bekerja lintas fungsi, berbagi kredit, dan membangun koalisi
+   Level 1=siloed, competitive | 3=effective team player, shares credit | 5=creates collaboration culture
+
+8. id:lom-communicates | Communicates Effectively | bench:78
+   Kemampuan menyampaikan pesan secara jelas, persuasif, dan sesuai audiens
+   Level 1=unclear, poor listener | 3=clear, adapts to audience | 5=compelling communicator across all media
+
+9. id:lom-customer-focus | Customer/Stakeholder Focus | bench:80
+   Orientasi pada kebutuhan pelanggan internal/eksternal dan pemangku kepentingan
+   Level 1=internally focused only | 3=consistently meets stakeholder needs | 5=anticipates needs, builds loyalty
+
+Total: 9 kompetensi Lominger`.trim();
+
+const FRAMEWORK_FINANCE = `
+FRAMEWORK: CGMA Competency Framework (CIMA/AICPA, 2019) + CFA Institute Competency Standards
+Reference: CGMA (cgma.org); globally recognized for Finance, Accounting, Legal, Compliance roles
+Score conversion: level 1→20, 2→40, 3→60, 4→80, 5→100
+
+CGMA CORE COMPETENCIES (8 kompetensi) — pillar: "cgma":
+1. id:cgma-technical-accounting | Technical Accounting & Reporting | bench:83
+   Penguasaan standar akuntansi (PSAK/IFRS), pelaporan keuangan, dan kepatuhan regulasi
+   Level 1=basic bookkeeping | 3=prepares financial statements per PSAK/IFRS | 5=technical authority, complex transactions
+
+2. id:cgma-financial-analysis | Financial Analysis & Planning | bench:82
+   Kemampuan analisis laporan keuangan, forecasting, budgeting, dan variance analysis
+   Level 1=reads basic P&L only | 3=builds financial models, identifies trends | 5=drives financial strategy
+
+3. id:cgma-risk-control | Risk Management & Internal Control | bench:80
+   Pemahaman risiko bisnis, kerangka pengendalian internal (COSO), dan audit
+   Level 1=unaware of risk framework | 3=identifies and mitigates key risks | 5=designs enterprise risk framework
+
+4. id:cgma-business-acumen | Business Acumen & Commercial Awareness | bench:79
+   Pemahaman model bisnis, value drivers, dan kemampuan menghubungkan angka ke keputusan bisnis
+   Level 1=sees numbers in isolation | 3=connects financials to business outcomes | 5=trusted strategic partner to CEO/CFO
+
+5. id:cgma-digital-finance | Digital Finance & Data Analytics | bench:81
+   Kemampuan menggunakan tools analitik (Excel lanjut, Power BI, ERP, Python/SQL dasar) untuk finance
+   Level 1=manual spreadsheets only | 3=builds dashboards, automates reports | 5=drives finance digital transformation
+
+6. id:cgma-ethics-compliance | Ethics, Governance & Compliance | bench:84
+   Komitmen pada integritas, pemahaman regulasi (OJK, BI, UU Pasar Modal), dan tata kelola
+   Level 1=unaware of compliance requirements | 3=ensures full regulatory compliance | 5=shapes ethics culture
+
+7. id:cgma-stakeholder-influence | Stakeholder Influence & Presentation | bench:77
+   Kemampuan menyampaikan insight keuangan kepada non-finance audience dan manajemen senior
+   Level 1=cannot explain financials simply | 3=clear financial storytelling | 5=boardroom-ready presenter
+
+8. id:cgma-leadership | Leadership & People Development | bench:78
+   Kemampuan memimpin tim keuangan, mengembangkan kapabilitas, dan manajemen kinerja
+   Level 1=individual contributor only | 3=effectively leads small team | 5=builds high-performing finance function
+
+Total: 8 kompetensi CGMA`.trim();
+
+/* ─── Framework metadata ─── */
+
+interface FrameworkMeta {
+  label: string;
+  reference: string;
+  competencyCount: number;
+  definition: string;
+}
+
+const FRAMEWORK_META: Record<CompetencyCluster, FrameworkMeta> = {
+  hr: {
+    label: "Ulrich HR Competency Model + SKKNI No.149/2020",
+    reference: "Ulrich et al. (2012); Kemnaker RI (2020)",
+    competencyCount: 11,
+    definition: FRAMEWORK_HR,
+  },
+  tech: {
+    label: "SFIA v8 — Skills Framework for Information Age",
+    reference: "SFIA Foundation (2023); adopted by Google, Microsoft, IBM",
+    competencyCount: 8,
+    definition: FRAMEWORK_TECH,
+  },
+  business: {
+    label: "Lominger Leadership Architect (Korn Ferry)",
+    reference: "Korn Ferry Lominger (2014); Fortune 500 leadership selection standard",
+    competencyCount: 9,
+    definition: FRAMEWORK_BUSINESS,
+  },
+  finance: {
+    label: "CGMA Competency Framework (CIMA/AICPA)",
+    reference: "CGMA (2019); CFA Institute Standards",
+    competencyCount: 8,
+    definition: FRAMEWORK_FINANCE,
+  },
+};
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PROMPT BUILDER
+═══════════════════════════════════════════════════════════════════════════ */
 
 export function buildAnalysisPrompt(
   cvText: string,
@@ -58,38 +321,83 @@ export function buildAnalysisPrompt(
   targetPosition: string,
   department: string
 ): string {
-  // Hard limit: 2500 karakter CV. Free tier ~1M token/day, tapi per-request ada limit
+  const cluster = detectCluster(targetPosition, department);
+  const meta = FRAMEWORK_META[cluster];
   const trimmedCv = cvText.slice(0, 2500);
 
-  return `Kamu adalah HR Intelligence Analyst. Analisis CV dan kembalikan HANYA JSON valid (tanpa markdown, tanpa teks tambahan).
+  return `Kamu adalah Senior Talent Assessment Specialist di perusahaan multinasional Fortune 500. Analisis CV kandidat menggunakan framework kompetensi standar internasional yang sesuai dengan posisi mereka. Kembalikan HANYA JSON valid tanpa teks tambahan apapun.
 
-KANDIDAT: ${candidateName} | POSISI: ${targetPosition} | DEPARTEMEN: ${department}
+KANDIDAT: ${candidateName}
+POSISI TARGET: ${targetPosition}
+DEPARTEMEN: ${department}
+FRAMEWORK YANG DIGUNAKAN: ${meta.label}
+REFERENSI: ${meta.reference}
 
-CV (ringkasan):
+═══ TEKS CV ═══
 ${trimmedCv}
+═══════════════
 
-FRAMEWORK (11 kompetensi, score rubrik 1→20, 2→40, 3→60, 4→80, 5→100):
-Ulrich: credible-activist(bench:80), strategic-positioner(78), capability-builder(80), change-champion(78), hr-innovator(81), technology-proponent(83)
-SKKNI: perencanaan(80), rekrutmen(85), pengembangan(82), kinerja(79), hubungan-industrial(80)
-ID format: "ulrich-credible-activist", "skkni-perencanaan", dst.
-gap: "strength" jika score>=bench, "meets" jika |score-bench|<=5, "develop" jika score<bench-5
+${meta.definition}
 
-OUTPUT JSON:
+INSTRUKSI ANALISIS:
+- Evaluasi setiap kompetensi berdasarkan evidence nyata dari teks CV
+- Jika tidak ada bukti eksplisit untuk kompetensi tertentu, beri rawLevel 1-2
+- evidenceQuote: kutipan langsung dari CV (max 15 kata) atau "Tidak ditemukan bukti eksplisit"
+- gap: "strength" jika score>=bench, "meets" jika |score-bench|<=5, "develop" jika score<bench-5
+- questions: 5 pertanyaan STAR format, prioritaskan gap terbesar kandidat
+- Gunakan standar evaluasi multinasional — objektif, berbasis data, tidak bias
+
+OUTPUT JSON (kembalikan PERSIS format ini):
 {
   "overallScore": <0-100>,
-  "matchScore": <0-100>,
-  "confidence": <0-100>,
+  "matchScore": <0-100, kecocokan CV dengan posisi ${targetPosition}>,
+  "confidence": <0-100, seberapa confident analisis berdasarkan kelengkapan CV>,
   "recommendation": <"Strong Hire"|"Hire"|"Review"|"Reject">,
-  "summary": "<2-3 kalimat Indonesia>",
-  "recommendationDetail": "<next step konkret>",
-  "processingNote": "<catatan kualitas CV>",
-  "competencies": [<11 item: id,name,pillar,score,rawLevel,benchmark,insight,evidenceQuote,gap>],
-  "risks": [<2-4 item: id,label,detail,severity,source>],
-  "questions": [<5 item behavioral STAR: id,category,question,rationale,targetCompetency,validityMethod>]
-}`;
+  "summary": "<2-3 kalimat executive summary dalam bahasa Indonesia>",
+  "recommendationDetail": "<actionable next step konkret untuk hiring manager>",
+  "processingNote": "<catatan tentang kualitas/kelengkapan CV yang dianalisis>",
+  "cluster": "${cluster}",
+  "frameworkLabel": "${meta.label}",
+  "competencies": [
+    {
+      "id": "<id persis dari framework>",
+      "name": "<nama kompetensi>",
+      "pillar": "<pillar dari framework>",
+      "score": <0-100>,
+      "rawLevel": <1-5>,
+      "benchmark": <sesuai framework>,
+      "insight": "<1-2 kalimat evidence dari CV dalam bahasa Indonesia>",
+      "evidenceQuote": "<kutipan dari CV atau 'Tidak ditemukan bukti eksplisit'>",
+      "gap": <"strength"|"meets"|"develop">
+    }
+  ],
+  "risks": [
+    {
+      "id": "<R1, R2, dst>",
+      "label": "<nama singkat risiko>",
+      "detail": "<penjelasan dan rekomendasi mitigasi>",
+      "severity": <"high"|"medium"|"low">,
+      "source": "<bagian CV>"
+    }
+  ],
+  "questions": [
+    {
+      "id": <1-5>,
+      "category": "<nama kompetensi yang ditargetkan>",
+      "question": "<pertanyaan STAR format dalam bahasa Indonesia>",
+      "rationale": "<mengapa pertanyaan ini penting spesifik untuk kandidat ini>",
+      "targetCompetency": "<id kompetensi>",
+      "validityMethod": "<metode dan validity coefficient, contoh: Structured interview r≈0.51>"
+    }
+  ]
 }
 
-/* ─── Response parser ─── */
+PENTING: competencies harus berisi TEPAT ${meta.competencyCount} item sesuai framework di atas.`;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   RESPONSE PARSER
+═══════════════════════════════════════════════════════════════════════════ */
 
 export function parseAnalysisResponse(rawResponse: string): AiAnalysisResult {
   let cleaned = rawResponse.trim();
@@ -98,9 +406,7 @@ export function parseAnalysisResponse(rawResponse: string): AiAnalysisResult {
 
   const jsonStart = cleaned.indexOf("{");
   const jsonEnd = cleaned.lastIndexOf("}");
-  if (jsonStart > 0) {
-    cleaned = cleaned.slice(jsonStart, jsonEnd + 1);
-  }
+  if (jsonStart > 0) cleaned = cleaned.slice(jsonStart, jsonEnd + 1);
 
   const parsed = JSON.parse(cleaned) as AiAnalysisResult;
 
@@ -111,7 +417,6 @@ export function parseAnalysisResponse(rawResponse: string): AiAnalysisResult {
     throw new Error("Response tidak valid: field recommendation tidak ditemukan");
   }
 
-  // Safety clamp
   parsed.competencies = parsed.competencies.map((c) => ({
     ...c,
     score: Math.min(100, Math.max(0, Number(c.score) || 50)),
@@ -123,50 +428,49 @@ export function parseAnalysisResponse(rawResponse: string): AiAnalysisResult {
   parsed.matchScore = Math.min(100, Math.max(0, Number(parsed.matchScore) || 0));
   parsed.confidence = Math.min(100, Math.max(0, Number(parsed.confidence) || 0));
 
+  // Pastikan cluster dan frameworkLabel selalu ada
+  if (!parsed.cluster) parsed.cluster = "business";
+  if (!parsed.frameworkLabel) parsed.frameworkLabel = FRAMEWORK_META[parsed.cluster].label;
+
   return parsed;
 }
 
-/* ─── Fallback jika error ─── */
+/* ═══════════════════════════════════════════════════════════════════════════
+   FALLBACK
+═══════════════════════════════════════════════════════════════════════════ */
 
 export function buildFallbackResult(errorMessage: string): AiAnalysisResult {
   const makeComp = (
-    id: string, name: string, pillar: "ulrich" | "skkni", benchmark: number
+    id: string, name: string, pillar: string, benchmark: number
   ): AiCompetencyScore => ({
     id, name, pillar,
     score: 50, rawLevel: 3, benchmark,
-    insight: "Analisis tidak tersedia.",
+    insight: "Analisis tidak tersedia karena error.",
     evidenceQuote: "Error saat analisis",
     gap: "develop",
   });
 
   return {
-    overallScore: 0,
-    matchScore: 0,
-    confidence: 0,
+    overallScore: 0, matchScore: 0, confidence: 0,
     recommendation: "Review",
+    cluster: "business",
+    frameworkLabel: "Error — Framework tidak terdeteksi",
     summary: `Analisis gagal: ${errorMessage}`,
     recommendationDetail: "Periksa koneksi API dan coba kembali.",
     processingNote: errorMessage,
     competencies: [
-      makeComp("ulrich-credible-activist", "Credible Activist", "ulrich", 80),
-      makeComp("ulrich-strategic-positioner", "Strategic Positioner", "ulrich", 78),
-      makeComp("ulrich-capability-builder", "Capability Builder", "ulrich", 80),
-      makeComp("ulrich-change-champion", "Change Champion", "ulrich", 78),
-      makeComp("ulrich-hr-innovator", "HR Innovator & Integrator", "ulrich", 81),
-      makeComp("ulrich-technology-proponent", "Technology Proponent", "ulrich", 83),
-      makeComp("skkni-perencanaan", "Perencanaan SDM", "skkni", 80),
-      makeComp("skkni-rekrutmen", "Rekrutmen & Seleksi", "skkni", 85),
-      makeComp("skkni-pengembangan", "Pengembangan Kompetensi", "skkni", 82),
-      makeComp("skkni-kinerja", "Manajemen Kinerja", "skkni", 79),
-      makeComp("skkni-hubungan-industrial", "Hubungan Industrial", "skkni", 80),
+      makeComp("lom-strategic-agility", "Strategic Agility", "lominger", 80),
+      makeComp("lom-drive-results", "Drive for Results", "lominger", 85),
+      makeComp("lom-learning-agility", "Learning Agility", "lominger", 82),
     ],
     risks: [{
-      id: "R1",
-      label: "Analisis tidak tersedia",
+      id: "R1", label: "Analisis tidak tersedia",
       detail: `Error: ${errorMessage}`,
-      severity: "high",
-      source: "System",
+      severity: "high", source: "System",
     }],
     questions: [],
   };
 }
+
+/* ─── Export helper untuk UI ─── */
+export { FRAMEWORK_META };

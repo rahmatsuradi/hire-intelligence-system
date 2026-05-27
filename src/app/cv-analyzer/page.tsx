@@ -9,7 +9,7 @@ import {
   CITATIONS,
   type CompetencyScore,
 } from "@/lib/competency-framework";
-import type { AiAnalysisResult } from "@/lib/cv-analyzer-ai";
+import type { AiAnalysisResult, CompetencyCluster } from "@/lib/cv-analyzer-ai";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -45,6 +45,8 @@ interface AnalysisReport {
   matchScore: number;
   processingMs: number;
   processingNote?: string;
+  frameworkLabel: string;
+  cluster: CompetencyCluster;
 }
 
 const NAV_MAIN: NavItem[] = [
@@ -69,6 +71,14 @@ const DEPARTMENTS = [
   "Finance", "Security", "Operations", "HR", "Legal",
 ];
 
+// Badge warna per cluster
+const CLUSTER_BADGE: Record<CompetencyCluster, { label: string; className: string }> = {
+  hr: { label: "Ulrich + SKKNI", className: "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300" },
+  tech: { label: "SFIA v8", className: "bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300" },
+  business: { label: "Lominger / Korn Ferry", className: "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300" },
+  finance: { label: "CGMA / CIMA", className: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300" },
+};
+
 function buildReportFromAi(ai: AiAnalysisResult, startMs: number): Omit<AnalysisReport, "reportId" | "generatedAt"> {
   return {
     confidence: ai.confidence,
@@ -79,6 +89,8 @@ function buildReportFromAi(ai: AiAnalysisResult, startMs: number): Omit<Analysis
     summary: ai.summary,
     recommendationDetail: ai.recommendationDetail,
     processingNote: ai.processingNote,
+    frameworkLabel: ai.frameworkLabel ?? "Multi-Framework Competency",
+    cluster: ai.cluster ?? "business",
     competencies: ai.competencies.map((c) => ({
       id: c.id, name: c.name, pillar: c.pillar,
       score: c.score, benchmark: c.benchmark, insight: c.insight, rubric: [],
@@ -136,13 +148,6 @@ const NAV_ICON_MAP: Record<string, keyof typeof PATHS> = {
 
 function SvgPath({ name }: { name: keyof typeof PATHS }) {
   return <path strokeLinecap="round" strokeLinejoin="round" d={PATHS[name]} />;
-}
-
-function scoreColor(score: number) {
-  if (score >= 85) return "bg-emerald-500";
-  if (score >= 75) return "bg-blue-500";
-  if (score >= 65) return "bg-amber-500";
-  return "bg-slate-400";
 }
 
 function recommendationStyles(rec: Recommendation) {
@@ -246,7 +251,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
               <p className="text-xs font-medium text-slate-500 dark:text-slate-400">AI CV Analysis</p>
             </div>
             <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">Powered by Groq · Llama 3.3</p>
-            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Upload PDF resumes for real-time competency scoring and interview guides.</p>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Multi-framework: Ulrich, SFIA, Lominger, CGMA — auto-selected by role.</p>
           </div>
         </div>
       </aside>
@@ -257,29 +262,28 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
 function TopBar({ isDark, onThemeToggle, onMenuOpen }: { isDark: boolean; onThemeToggle: () => void; onMenuOpen: () => void }) {
   return (
     <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-3 border-b border-slate-200 bg-white/90 px-4 backdrop-blur-md sm:gap-4 sm:px-6 dark:border-slate-800 dark:bg-slate-900/90">
-      <button type="button" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 lg:hidden dark:hover:bg-slate-800" onClick={onMenuOpen} aria-label="Open navigation menu">
+      <button type="button" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 lg:hidden dark:hover:bg-slate-800" onClick={onMenuOpen}>
         <Icon className="h-5 w-5"><SvgPath name="menu" /></Icon>
       </button>
       <div className="hidden min-w-0 sm:block">
         <h1 className="truncate text-lg font-semibold text-slate-900 dark:text-white">CV Analyzer</h1>
-        <p className="text-xs text-slate-500 dark:text-slate-400">AI-powered resume intelligence · Groq · Llama 3.3</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400">Multi-framework AI analysis · Groq · Llama 3.3</p>
       </div>
       <div className="ml-auto flex items-center gap-1 sm:gap-2">
-        <button type="button" onClick={onThemeToggle} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label={`Switch to ${isDark ? "light" : "dark"} mode`}>
+        <button type="button" onClick={onThemeToggle} className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">
           <Icon className="h-5 w-5"><SvgPath name={isDark ? "sun" : "moon"} /></Icon>
         </button>
-        <button type="button" className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Notifications">
+        <button type="button" className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">
           <Icon className="h-5 w-5"><SvgPath name="bell" /></Icon>
           <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white ring-2 ring-white dark:ring-slate-900">3</span>
         </button>
         <div className="hidden h-8 w-px bg-slate-200 md:block dark:bg-slate-700" />
-        <button type="button" className="flex items-center gap-2 rounded-lg py-1 pl-1 pr-2 hover:bg-slate-100 md:pr-3 dark:hover:bg-slate-800" aria-label="User menu">
+        <button type="button" className="flex items-center gap-2 rounded-lg py-1 pl-1 pr-2 hover:bg-slate-100 md:pr-3 dark:hover:bg-slate-800">
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-xs font-semibold text-white">AK</div>
           <div className="hidden text-left lg:block">
             <p className="text-sm font-medium text-slate-900 dark:text-white">Alex Kim</p>
             <p className="text-xs text-slate-500 dark:text-slate-400">Talent Lead</p>
           </div>
-          <Icon className="hidden h-4 w-4 text-slate-400 lg:block"><SvgPath name="chevronDown" /></Icon>
         </button>
       </div>
     </header>
@@ -334,8 +338,12 @@ function PdfDropzone({ file, dragActive, onFile, onDragActive }: { file: File | 
   );
 }
 
-function AnalysisReportPanel({ report, candidateName, targetPosition, department }: { report: AnalysisReport; candidateName: string; targetPosition: string; department: string }) {
+function AnalysisReportPanel({ report, candidateName, targetPosition, department }: {
+  report: AnalysisReport; candidateName: string; targetPosition: string; department: string
+}) {
   const recStyle = recommendationStyles(report.recommendation);
+  const clusterBadge = CLUSTER_BADGE[report.cluster];
+
   return (
     <div className="space-y-6">
       <Card className="overflow-hidden p-0">
@@ -348,10 +356,15 @@ function AnalysisReportPanel({ report, candidateName, targetPosition, department
               <div>
                 <div className="flex flex-wrap items-center gap-2">
                   <h2 className="text-lg font-semibold text-slate-900 dark:text-white">AI Analysis Report</h2>
-                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">
+                  {/* Badge framework — dinamis berdasarkan cluster */}
+                  <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide", clusterBadge.className)}>
+                    {clusterBadge.label}
+                  </span>
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-400">
                     Groq · Llama 3.3
                   </span>
                 </div>
+                <p className="mt-0.5 text-xs text-slate-400">{report.frameworkLabel}</p>
                 <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">{candidateName} · {targetPosition} · {department}</p>
                 <p className="mt-1 font-mono text-xs text-slate-400">{report.reportId} · {report.generatedAt}</p>
               </div>
@@ -391,7 +404,7 @@ function AnalysisReportPanel({ report, candidateName, targetPosition, department
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <h3 className="text-base font-semibold text-slate-900 dark:text-white">Competency Assessment</h3>
-          <p className="mt-0.5 text-sm text-slate-500">Ulrich (6) + SKKNI (5) · scored from CV evidence</p>
+          <p className="mt-0.5 text-sm text-slate-500">{report.frameworkLabel} · scored from CV evidence</p>
           <div className="mt-5"><CompetencyScoreList scores={report.competencies} /></div>
         </Card>
         <Card>
@@ -514,9 +527,8 @@ export default function CvAnalyzerPage() {
       const res = await fetch("/api/analyze-cv", { method: "POST", body: formData });
       const json = await res.json() as {
         success?: boolean;
-        result?: import("@/lib/cv-analyzer-ai").AiAnalysisResult;
+        result?: AiAnalysisResult;
         error?: string;
-        meta?: { model: string };
       };
 
       if (!res.ok || json.error) throw new Error(json.error ?? `Server error ${res.status}`);
@@ -540,7 +552,7 @@ export default function CvAnalyzerPage() {
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar isDark={isDark} onThemeToggle={cycleTheme} onMenuOpen={() => setSidebarOpen(true)} />
-        <main id="main-content" className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto">
           <div className="border-b border-slate-200 bg-white px-4 py-3 sm:px-6 dark:border-slate-800 dark:bg-slate-900">
             <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-sm">
               <Link href="/" className="text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white">Home</Link>
@@ -548,7 +560,7 @@ export default function CvAnalyzerPage() {
               <span className="font-medium text-slate-900 dark:text-white">CV Analyzer</span>
               <span className="ml-auto hidden rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700 sm:inline dark:bg-indigo-500/10 dark:text-indigo-400">
                 <Icon className="mr-1 inline h-3.5 w-3.5"><SvgPath name="sparkles" /></Icon>
-                Real AI · Groq · Llama 3.3
+                Real AI · Multi-Framework
               </span>
             </nav>
           </div>
@@ -571,7 +583,7 @@ export default function CvAnalyzerPage() {
 
                 <Card>
                   <h2 className="text-base font-semibold text-slate-900 dark:text-white">Candidate Details</h2>
-                  <p className="mt-0.5 text-sm text-slate-500">Required for role-calibrated analysis</p>
+                  <p className="mt-0.5 text-sm text-slate-500">Framework auto-selected by role · Ulrich · SFIA · Lominger · CGMA</p>
                   <div className="mt-4 space-y-4">
                     <div>
                       <Label htmlFor="candidate-name">Candidate name</Label>
@@ -579,7 +591,7 @@ export default function CvAnalyzerPage() {
                     </div>
                     <div>
                       <Label htmlFor="target-position">Target position</Label>
-                      <input id="target-position" type="text" value={targetPosition} onChange={(e) => setTargetPosition(e.target.value)} placeholder="e.g. HR Generalist" className={inputClass} />
+                      <input id="target-position" type="text" value={targetPosition} onChange={(e) => setTargetPosition(e.target.value)} placeholder="e.g. Software Engineer / HR Manager / CFO" className={inputClass} />
                     </div>
                     <div>
                       <Label htmlFor="department">Department</Label>
@@ -590,7 +602,7 @@ export default function CvAnalyzerPage() {
                     </div>
                     <Button variant="primary" size="lg" className="w-full" disabled={!canAnalyze || analyzing} onClick={handleAnalyze}>
                       {analyzing ? (
-                        <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />Analyzing with Groq…</>
+                        <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />Analyzing…</>
                       ) : (
                         <><Icon className="h-5 w-5"><SvgPath name="sparkles" /></Icon>Analyze CV</>
                       )}
@@ -615,7 +627,7 @@ export default function CvAnalyzerPage() {
                       <Icon className="h-8 w-8 animate-pulse text-blue-600 dark:text-blue-400"><SvgPath name="sparkles" /></Icon>
                     </div>
                     <p className="mt-4 font-medium text-slate-900 dark:text-white">AI sedang menganalisis CV…</p>
-                    <p className="mt-1 text-sm text-slate-500">Membaca kompetensi Ulrich + SKKNI dari teks CV</p>
+                    <p className="mt-1 text-sm text-slate-500">Mendeteksi framework · Membaca kompetensi · Generating insight</p>
                     <div className="mt-6 h-1.5 w-48 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
                       <div className="h-full w-2/3 animate-pulse rounded-full bg-gradient-to-r from-blue-500 to-indigo-500" />
                     </div>
@@ -626,7 +638,7 @@ export default function CvAnalyzerPage() {
                     <Icon className="h-12 w-12 text-slate-300 dark:text-slate-600"><SvgPath name="scan" /></Icon>
                     <p className="mt-4 font-medium text-slate-900 dark:text-white">No analysis yet</p>
                     <p className="mt-1 max-w-sm text-sm text-slate-500">
-                      Upload CV PDF, isi detail kandidat, klik Analyze. AI akan membaca CV dan menghasilkan scoring Ulrich + SKKNI secara real-time.
+                      Framework dipilih otomatis berdasarkan posisi: HR → Ulrich+SKKNI, Tech → SFIA, Business/MT → Lominger, Finance → CGMA.
                     </p>
                   </Card>
                 )}
@@ -640,7 +652,7 @@ export default function CvAnalyzerPage() {
           <footer className="border-t border-slate-200 px-6 py-4 dark:border-slate-800">
             <div className="flex flex-col gap-2 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between dark:text-slate-400">
               <p>© 2026 Hire Intelligence · Enterprise Hiring Platform</p>
-              <p className="tabular-nums">v2.5.0 · Groq · Llama 3.3 · Real AI</p>
+              <p className="tabular-nums">v3.0.0 · Multi-Framework AI · Groq · Llama 3.3</p>
             </div>
           </footer>
         </main>
