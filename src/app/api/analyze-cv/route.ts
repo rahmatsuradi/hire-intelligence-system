@@ -6,11 +6,15 @@
 ═══════════════════════════════════════════════════════════════════════════ */
 
 import { NextRequest, NextResponse } from "next/server";
+import { extractText } from "unpdf";
 import {
   buildAnalysisPrompt,
   buildFallbackResult,
   parseAnalysisResponse,
 } from "@/lib/cv-analyzer-ai";
+
+export const runtime = "nodejs";
+export const maxDuration = 30;
 
 const GROQ_MODEL = "llama-3.3-70b-versatile";
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
@@ -29,17 +33,16 @@ function isReadableText(text: string): boolean {
 
 async function extractPdfText(buffer: Buffer): Promise<string> {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const pdfParse = require("pdf-parse");
-    const data = await pdfParse(buffer);
-    const text = data.text?.trim() ?? "";
-    if (isReadableText(text)) {
-      console.log("[analyze-cv] pdf-parse OK, length:", text.length);
-      return text;
+    const uint8Array = new Uint8Array(buffer);
+    const { text } = await extractText(uint8Array, { mergePages: true });
+    const trimmed = text?.trim() ?? "";
+    if (isReadableText(trimmed)) {
+      console.log("[analyze-cv] unpdf OK, length:", trimmed.length);
+      return trimmed;
     }
-    throw new Error("pdf-parse returned unreadable text");
+    throw new Error("unpdf returned unreadable text");
   } catch (err) {
-    console.warn("[analyze-cv] pdf-parse failed:", (err as Error).message);
+    console.warn("[analyze-cv] unpdf failed:", (err as Error).message);
     const fallback = buffer
       .toString("utf-8")
       .replace(/[^\x20-\x7E\n\r\t]/g, " ")
@@ -47,7 +50,7 @@ async function extractPdfText(buffer: Buffer): Promise<string> {
       .trim();
 
     if (isReadableText(fallback)) {
-      console.log("[analyze-cv] Fallback text OK, length:", fallback.length);
+      console.log("[analyze-cv] Fallback UTF-8 OK, length:", fallback.length);
       return fallback;
     }
     console.warn("[analyze-cv] Both extraction methods failed");
