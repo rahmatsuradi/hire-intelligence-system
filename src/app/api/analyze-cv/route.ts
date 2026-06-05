@@ -6,7 +6,7 @@
 ═══════════════════════════════════════════════════════════════════════════ */
 
 import { NextRequest, NextResponse } from "next/server";
-import { extractText } from "unpdf";
+import { extractText, getDocumentProxy } from "unpdf";
 import {
   buildAnalysisPrompt,
   buildFallbackResult,
@@ -34,7 +34,8 @@ function isReadableText(text: string): boolean {
 async function extractPdfText(buffer: Buffer): Promise<string> {
   try {
     const uint8Array = new Uint8Array(buffer);
-    const { text } = await extractText(uint8Array, { mergePages: true });
+    const pdf = await getDocumentProxy(uint8Array);
+    const { text } = await extractText(pdf, { mergePages: true });
     const trimmed = text?.trim() ?? "";
     if (isReadableText(trimmed)) {
       console.log("[analyze-cv] unpdf OK, length:", trimmed.length);
