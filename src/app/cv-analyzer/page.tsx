@@ -338,8 +338,8 @@ function PdfDropzone({ file, dragActive, onFile, onDragActive }: { file: File | 
   );
 }
 
-function AnalysisReportPanel({ report, candidateName, targetPosition, department }: {
-  report: AnalysisReport; candidateName: string; targetPosition: string; department: string
+function AnalysisReportPanel({ report, candidateName, targetPosition, department, onExportPdf }: {
+  report: AnalysisReport; candidateName: string; targetPosition: string; department: string; onExportPdf?: () => void;
 }) {
   const recStyle = recommendationStyles(report.recommendation);
   const clusterBadge = CLUSTER_BADGE[report.cluster];
@@ -469,9 +469,12 @@ function AnalysisReportPanel({ report, candidateName, targetPosition, department
             </div>
           </div>
           <div className="flex gap-2">
-            <Button variant="secondary" size="sm">Share report</Button>
-            <Button variant="primary" size="sm">Schedule interview</Button>
-          </div>
+          <Button variant="secondary" size="sm" onClick={onExportPdf}>
+            <Icon className="h-4 w-4"><SvgPath name="download" /></Icon>
+              Export PDF
+              </Button>
+              <Button variant="primary" size="sm">Schedule interview</Button>
+            </div>
         </div>
         <p className="mt-4 text-sm leading-relaxed text-slate-700 dark:text-slate-300">{report.recommendationDetail}</p>
       </div>
@@ -510,6 +513,162 @@ export default function CvAnalyzerPage() {
   }, []);
 
   const canAnalyze = file !== null && candidateName.trim() !== "" && targetPosition.trim() !== "" && department !== "";
+
+  const handleExportPdf = useCallback(() => {
+    if (!report) return;
+
+    const competencyRows = report.competencies.map(c => {
+      const gap = c.score >= c.benchmark ? "strength" : c.score >= c.benchmark - 10 ? "meets" : "develop";
+      const gapLabel = gap === "strength" ? "✅ Strength" : gap === "meets" ? "≈ Meets" : "⚠ Develop";
+      const pct = Math.min(100, c.score);
+      return `<tr>
+        <td><strong>${c.name}</strong><br/><span style="font-size:8pt;color:#64748b">${c.pillar}</span></td>
+        <td style="text-align:center"><strong>${c.score}</strong></td>
+        <td style="text-align:center">${c.benchmark}</td>
+        <td>
+          <div style="height:6px;border-radius:3px;background:#e2e8f0;width:100%;">
+            <div style="height:100%;border-radius:3px;width:${pct}%;background:${gap === 'strength' ? '#059669' : gap === 'meets' ? '#2563eb' : '#f59e0b'};"></div>
+          </div>
+        </td>
+        <td><span style="font-size:8pt;padding:2px 6px;border-radius:4px;font-weight:500;background:${gap === 'strength' ? '#dcfce7' : gap === 'meets' ? '#dbeafe' : '#fef3c7'};color:${gap === 'strength' ? '#166534' : gap === 'meets' ? '#1e40af' : '#92400e'}">${gapLabel}</span></td>
+        <td style="font-size:8.5pt;color:#475569;">${c.insight || "-"}</td>
+      </tr>`;
+    }).join("");
+
+    const riskRows = report.risks.map(r => {
+      const bg = r.severity === "high" ? "#fef2f2" : r.severity === "medium" ? "#fffbeb" : "#f8fafc";
+      const border = r.severity === "high" ? "#ef4444" : r.severity === "medium" ? "#f59e0b" : "#94a3b8";
+      const badgeBg = r.severity === "high" ? "#fca5a5" : r.severity === "medium" ? "#fcd34d" : "#cbd5e1";
+      const badgeColor = r.severity === "high" ? "#7f1d1d" : r.severity === "medium" ? "#78350f" : "#334155";
+      return `<div style="padding:10px 12px;border-radius:6px;margin-bottom:8px;display:flex;align-items:flex-start;gap:10px;background:${bg};border-left:3px solid ${border};">
+        <div style="flex:1">
+          <strong style="font-size:10pt">${r.label}</strong>
+          <p style="font-size:9pt;color:#475569;margin-top:3px">${r.detail}</p>
+        </div>
+        <span style="font-size:7pt;padding:2px 6px;border-radius:4px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;background:${badgeBg};color:${badgeColor};flex-shrink:0">${r.severity}</span>
+      </div>`;
+    }).join("");
+
+    const questionRows = report.questions.map(q =>
+      `<div style="display:flex;gap:12px;padding:10px 0;border-bottom:1px solid #f1f5f9">
+        <div style="width:28px;height:28px;border-radius:50%;background:#dbeafe;color:#1d4ed8;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:10pt;flex-shrink:0">${q.id}</div>
+        <div>
+          <span style="background:#f1f5f9;color:#475569;font-size:7.5pt;padding:2px 6px;border-radius:4px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em">${q.category}</span>
+          <p style="font-size:10pt;font-weight:500;margin:6px 0 4px;line-height:1.4">${q.question}</p>
+          <p style="font-size:8.5pt;color:#64748b"><strong>Rationale:</strong> ${q.rationale}</p>
+        </div>
+      </div>`
+    ).join("");
+
+    const recBg = report.recommendation === "Strong Hire" ? "#f0fdf4" : report.recommendation === "Hire" ? "#eff6ff" : report.recommendation === "Review" ? "#fffbeb" : "#fef2f2";
+    const recBorder = report.recommendation === "Strong Hire" ? "#86efac" : report.recommendation === "Hire" ? "#93c5fd" : report.recommendation === "Review" ? "#fcd34d" : "#fca5a5";
+
+    const html = `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>CV Analysis - ${candidateName} - ${report.reportId}</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Segoe UI',system-ui,sans-serif;font-size:11pt;color:#0f172a;background:white;padding:24px}
+    @page{margin:18mm;size:A4}
+    table{width:100%;border-collapse:collapse;font-size:9.5pt}
+    th{background:#f1f5f9;text-align:left;padding:8px 10px;font-weight:600;font-size:8pt;text-transform:uppercase;letter-spacing:0.04em;color:#64748b}
+    td{padding:8px 10px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
+    tr:last-child td{border-bottom:none}
+    @media print{button{display:none}}
+  </style>
+</head>
+<body>
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:16px;border-bottom:2px solid #2563eb;margin-bottom:20px">
+    <div style="display:flex;align-items:center;gap:10px">
+      <div style="width:36px;height:36px;background:linear-gradient(135deg,#2563eb,#4f46e5);border-radius:8px;display:flex;align-items:center;justify-content:center;color:white;font-weight:bold;font-size:12pt">HI</div>
+      <div>
+        <h1 style="font-size:14pt;font-weight:700">Hire Intelligence</h1>
+        <p style="font-size:9pt;color:#64748b">AI-Powered CV Analysis Report</p>
+      </div>
+    </div>
+    <div style="text-align:right">
+      <p style="font-family:monospace;font-size:9pt;color:#64748b">${report.reportId}</p>
+      <p style="font-size:9pt;color:#64748b">${report.generatedAt}</p>
+      <span style="background:#eff6ff;color:#1d4ed8;font-size:8pt;padding:3px 8px;border-radius:12px;font-weight:500">${report.frameworkLabel}</span>
+    </div>
+  </div>
+
+  <div style="background:#f8fafc;border-radius:8px;padding:16px;margin-bottom:20px;border:1px solid #e2e8f0">
+    <h2 style="font-size:12pt;font-weight:600;margin-bottom:10px">Candidate Profile</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+      <div><p style="font-size:8pt;color:#64748b;text-transform:uppercase;letter-spacing:0.05em">Candidate</p><p style="font-size:10pt;font-weight:500;margin-top:2px">${candidateName}</p></div>
+      <div><p style="font-size:8pt;color:#64748b;text-transform:uppercase;letter-spacing:0.05em">Target Position</p><p style="font-size:10pt;font-weight:500;margin-top:2px">${targetPosition}</p></div>
+      <div><p style="font-size:8pt;color:#64748b;text-transform:uppercase;letter-spacing:0.05em">Department</p><p style="font-size:10pt;font-weight:500;margin-top:2px">${department}</p></div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:20px">
+    <div style="text-align:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px">
+      <p style="font-size:22pt;font-weight:700;color:#0f172a">${report.overallScore}</p>
+      <p style="font-size:8pt;color:#64748b;margin-top:2px">Overall Score</p>
+    </div>
+    <div style="text-align:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px">
+      <p style="font-size:22pt;font-weight:700;color:#2563eb">${report.matchScore}%</p>
+      <p style="font-size:8pt;color:#64748b;margin-top:2px">Role Match</p>
+    </div>
+    <div style="text-align:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px">
+      <p style="font-size:22pt;font-weight:700;color:#059669">${report.confidence}%</p>
+      <p style="font-size:8pt;color:#64748b;margin-top:2px">AI Confidence</p>
+    </div>
+  </div>
+
+  <div style="padding:16px;border-radius:8px;margin-bottom:20px;border:2px solid ${recBorder};background:${recBg}">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <span style="font-size:9pt;text-transform:uppercase;letter-spacing:0.08em;color:#64748b">Final Recommendation</span>
+      <span style="font-size:16pt;font-weight:700">${report.recommendation}</span>
+    </div>
+    <p style="font-size:10pt;color:#475569;line-height:1.5">${report.recommendationDetail}</p>
+  </div>
+
+  <div style="background:#f8fafc;border-left:4px solid #2563eb;padding:12px 16px;border-radius:0 8px 8px 0;margin-bottom:20px">
+    <h3 style="font-size:9pt;text-transform:uppercase;letter-spacing:0.05em;color:#2563eb;margin-bottom:6px">Executive Summary</h3>
+    <p style="font-size:10pt;color:#475569;line-height:1.6">${report.summary}</p>
+  </div>
+
+  <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px 12px;margin-bottom:20px;font-size:8.5pt;color:#64748b;line-height:1.5">
+    <strong style="color:#475569">Evidence Validity:</strong> Structured interview (r ≈ 0.51) · CV screening (r ≈ 0.38) · Unstructured interview (r ≈ 0.20) · Multi-method assessment recommended.
+    <em>Ref: Schmidt & Hunter (1998). Psychological Bulletin, 124(2), 262–274.</em>
+  </div>
+
+  <h2 style="font-size:12pt;font-weight:600;margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Competency Assessment — ${report.frameworkLabel}</h2>
+  <table style="margin-bottom:24px">
+    <thead><tr><th>Competency</th><th style="text-align:center">Score</th><th style="text-align:center">Benchmark</th><th style="width:80px">Bar</th><th>Gap</th><th>Insight</th></tr></thead>
+    <tbody>${competencyRows}</tbody>
+  </table>
+
+  <h2 style="font-size:12pt;font-weight:600;margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Risk Flags (${report.risks.length} items)</h2>
+  <div style="margin-bottom:24px">${riskRows}</div>
+
+  ${report.questions.length > 0 ? `
+  <h2 style="font-size:12pt;font-weight:600;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Structured Interview Questions (STAR Format)</h2>
+  <p style="font-size:8.5pt;color:#64748b;margin-bottom:12px">Generated from CV gaps · r ≈ 0.51 (Schmidt & Hunter, 1998)</p>
+  <div style="margin-bottom:24px">${questionRows}</div>
+  ` : ""}
+
+  <div style="margin-top:24px;padding-top:12px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;font-size:8pt;color:#94a3b8">
+    <span>Hire Intelligence · hire-intelligence-system.vercel.app</span>
+    <span>Generated: ${report.generatedAt} · Groq Llama 3.3 70B · No PII stored</span>
+  </div>
+</body>
+</html>`;
+
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      alert("Popup diblokir browser. Izinkan popup untuk export PDF.");
+      return;
+    }
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => { printWindow.print(); }, 800);
+  }, [report, candidateName, targetPosition, department]);
 
   const handleAnalyze = async () => {
     if (!canAnalyze || !file) return;
@@ -643,7 +802,7 @@ export default function CvAnalyzerPage() {
                   </Card>
                 )}
                 {!analyzing && report && (
-                  <AnalysisReportPanel report={report} candidateName={candidateName} targetPosition={targetPosition} department={department} />
+                  <AnalysisReportPanel report={report} candidateName={candidateName} targetPosition={targetPosition} department={department} onExportPdf={handleExportPdf} />
                 )}
               </div>
             </div>
