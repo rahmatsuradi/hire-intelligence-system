@@ -338,7 +338,7 @@ function PdfDropzone({ file, dragActive, onFile, onDragActive }: { file: File | 
   );
 }
 
-function AnalysisReportPanel({ report, candidateName, targetPosition, department, onExportPdf }: {
+function AnalysisReportPanel({ report, candidateName, targetPosition, department, onExportPdf, onScheduleInterview }: {
   report: AnalysisReport; candidateName: string; targetPosition: string; department: string; onExportPdf?: () => void; onScheduleInterview?: () => void;
 }) {
   const recStyle = recommendationStyles(report.recommendation);
