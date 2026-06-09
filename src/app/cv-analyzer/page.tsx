@@ -49,6 +49,19 @@ interface AnalysisReport {
   cluster: CompetencyCluster;
 }
 
+interface HistoryItem {
+  id: string;
+  savedAt: string;
+  candidateName: string;
+  position: string;
+  department: string;
+  recommendation: Recommendation;
+  overallScore: number;
+  matchScore: number;
+  frameworkLabel: string;
+  report: AnalysisReport;
+}
+
 const NAV_MAIN: NavItem[] = [
   { id: "dashboard", label: "Dashboard", href: "/" },
   { id: "candidates", label: "Candidates", href: "/", badge: 1284 },
@@ -100,6 +113,13 @@ function buildReportFromAi(ai: AiAnalysisResult, startMs: number): Omit<Analysis
   };
 }
 
+function recColor(rec: Recommendation): string {
+  if (rec === "Strong Hire") return "text-emerald-600 dark:text-emerald-400";
+  if (rec === "Hire") return "text-blue-600 dark:text-blue-400";
+  if (rec === "Review") return "text-amber-600 dark:text-amber-400";
+  return "text-red-600 dark:text-red-400";
+}
+
 function cn(...classes: (string | false | undefined)[]) {
   return classes.filter(Boolean).join(" ");
 }
@@ -138,6 +158,8 @@ const PATHS = {
   sparkles: "M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z",
   check: "M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
   download: "M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3",
+  history: "M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z",
+  trash: "M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0",
 } as const;
 
 const NAV_ICON_MAP: Record<string, keyof typeof PATHS> = {
@@ -338,6 +360,50 @@ function PdfDropzone({ file, dragActive, onFile, onDragActive }: { file: File | 
   );
 }
 
+function HistoryPanel({
+  history, onSelect, onDelete, onClear,
+}: {
+  history: HistoryItem[];
+  onSelect: (item: HistoryItem) => void;
+  onDelete: (id: string) => void;
+  onClear: () => void;
+}) {
+  if (history.length === 0) return null;
+  return (
+    <Card className="overflow-hidden p-0">
+      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+        <div className="flex items-center gap-2">
+          <Icon className="h-4 w-4 text-slate-500 dark:text-slate-400"><SvgPath name="history" /></Icon>
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Recent Analyses</h3>
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400">{history.length}</span>
+        </div>
+        <button onClick={onClear} className="text-xs text-slate-400 hover:text-red-500 transition-colors dark:hover:text-red-400">Clear all</button>
+      </div>
+      <div className="max-h-72 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800">
+        {history.map((item) => (
+          <div key={item.id} className="group flex items-start gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/50">
+            <button onClick={() => onSelect(item)} className="min-w-0 flex-1 text-left">
+              <p className="truncate text-sm font-medium text-slate-900 dark:text-white">{item.candidateName}</p>
+              <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">{item.position} · {item.department}</p>
+              <div className="mt-1 flex items-center gap-2">
+                <span className={cn("text-xs font-semibold", recColor(item.recommendation))}>{item.recommendation}</span>
+                <span className="text-xs text-slate-400">{item.overallScore} pts · {item.matchScore}% match</span>
+              </div>
+            </button>
+            <button
+              onClick={() => onDelete(item.id)}
+              className="mt-0.5 shrink-0 rounded p-0.5 text-slate-300 opacity-0 transition-all hover:text-red-400 group-hover:opacity-100 dark:text-slate-600 dark:hover:text-red-400"
+              aria-label="Delete"
+            >
+              <Icon className="h-4 w-4"><SvgPath name="trash" /></Icon>
+            </button>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 function AnalysisReportPanel({ report, candidateName, targetPosition, department, onExportPdf, onScheduleInterview }: {
   report: AnalysisReport; candidateName: string; targetPosition: string; department: string; onExportPdf?: () => void; onScheduleInterview?: () => void;
 }) {
@@ -494,6 +560,7 @@ export default function CvAnalyzerPage() {
   const [analyzing, setAnalyzing] = useState(false);
   const [report, setReport] = useState<AnalysisReport | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
@@ -510,6 +577,36 @@ export default function CvAnalyzerPage() {
 
   const cycleTheme = useCallback(() => {
     setTheme((t) => (t === "light" ? "dark" : t === "dark" ? "system" : "light"));
+  }, []);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("cv_analysis_history");
+      if (stored) setHistory(JSON.parse(stored));
+    } catch { /* ignore */ }
+  }, []);
+
+  const handleSelectHistory = useCallback((item: HistoryItem) => {
+    setCandidateName(item.candidateName);
+    setTargetPosition(item.position);
+    setDepartment(item.department);
+    setReport(item.report);
+    setFile(null);
+    setDragActive(false);
+    setError(null);
+  }, []);
+
+  const handleDeleteHistory = useCallback((id: string) => {
+    setHistory(prev => {
+      const updated = prev.filter(h => h.id !== id);
+      try { localStorage.setItem("cv_analysis_history", JSON.stringify(updated)); } catch { /* ignore */ }
+      return updated;
+    });
+  }, []);
+
+  const handleClearHistory = useCallback(() => {
+    setHistory([]);
+    try { localStorage.removeItem("cv_analysis_history"); } catch { /* ignore */ }
   }, []);
 
   const canAnalyze = file !== null && candidateName.trim() !== "" && targetPosition.trim() !== "" && department !== "";
@@ -711,10 +808,28 @@ export default function CvAnalyzerPage() {
       if (!json.result) throw new Error("Respons tidak valid dari server");
 
       const now = new Date();
-      setReport({
+      const newReport: AnalysisReport = {
         ...buildReportFromAi(json.result, startMs),
         reportId: `RPT-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
         generatedAt: now.toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" }),
+      };
+      setReport(newReport);
+      setHistory(prev => {
+        const item: HistoryItem = {
+          id: newReport.reportId,
+          savedAt: new Date().toISOString(),
+          candidateName,
+          position: targetPosition,
+          department,
+          recommendation: newReport.recommendation,
+          overallScore: newReport.overallScore,
+          matchScore: newReport.matchScore,
+          frameworkLabel: newReport.frameworkLabel,
+          report: newReport,
+        };
+        const updated = [item, ...prev.filter(h => h.id !== item.id)].slice(0, 20);
+        try { localStorage.setItem("cv_analysis_history", JSON.stringify(updated)); } catch { /* ignore */ }
+        return updated;
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
@@ -794,6 +909,7 @@ export default function CvAnalyzerPage() {
                     )}
                   </div>
                 </Card>
+                <HistoryPanel history={history} onSelect={handleSelectHistory} onDelete={handleDeleteHistory} onClear={handleClearHistory} />
               </div>
 
               <div className="xl:col-span-3">
