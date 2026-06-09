@@ -339,7 +339,7 @@ function PdfDropzone({ file, dragActive, onFile, onDragActive }: { file: File | 
 }
 
 function AnalysisReportPanel({ report, candidateName, targetPosition, department, onExportPdf }: {
-  report: AnalysisReport; candidateName: string; targetPosition: string; department: string; onExportPdf?: () => void;
+  report: AnalysisReport; candidateName: string; targetPosition: string; department: string; onExportPdf?: () => void; onScheduleInterview?: () => void;
 }) {
   const recStyle = recommendationStyles(report.recommendation);
   const clusterBadge = CLUSTER_BADGE[report.cluster];
@@ -473,7 +473,7 @@ function AnalysisReportPanel({ report, candidateName, targetPosition, department
             <Icon className="h-4 w-4"><SvgPath name="download" /></Icon>
               Export PDF
               </Button>
-              <Button variant="primary" size="sm">Schedule interview</Button>
+              <Button variant="primary" size="sm" onClick={onScheduleInterview}>Schedule interview</Button>
             </div>
         </div>
         <p className="mt-4 text-sm leading-relaxed text-slate-700 dark:text-slate-300">{report.recommendationDetail}</p>
@@ -670,6 +670,23 @@ export default function CvAnalyzerPage() {
     setTimeout(() => { printWindow.print(); }, 800);
   }, [report, candidateName, targetPosition, department]);
 
+  const handleScheduleInterview = useCallback(() => {
+    if (!report) return;
+    try {
+      sessionStorage.setItem("interview_prefill", JSON.stringify({
+        candidateName,
+        position: targetPosition,
+        department,
+        overallScore: report.overallScore,
+        matchScore: report.matchScore,
+        recommendation: report.recommendation,
+        questions: report.questions,
+        reportId: report.reportId,
+      }));
+    } catch { /* ignore */ }
+    window.location.href = `/interview?position=${encodeURIComponent(targetPosition)}&name=${encodeURIComponent(candidateName)}`;
+  }, [report, candidateName, targetPosition, department]);
+
   const handleAnalyze = async () => {
     if (!canAnalyze || !file) return;
     setAnalyzing(true);
@@ -802,7 +819,7 @@ export default function CvAnalyzerPage() {
                   </Card>
                 )}
                 {!analyzing && report && (
-                  <AnalysisReportPanel report={report} candidateName={candidateName} targetPosition={targetPosition} department={department} onExportPdf={handleExportPdf} />
+                  <AnalysisReportPanel report={report} candidateName={candidateName} targetPosition={targetPosition} department={department} onExportPdf={handleExportPdf} onScheduleInterview={handleScheduleInterview} />
                 )}
               </div>
             </div>

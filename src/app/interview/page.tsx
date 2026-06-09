@@ -58,6 +58,17 @@ interface QuestionPack {
   interviewerNotes: string[];
 }
 
+interface CvPrefill {
+  candidateName: string;
+  position: string;
+  department: string;
+  overallScore: number;
+  matchScore: number;
+  recommendation: string;
+  questions: { id: number; category: string; question: string; rationale: string }[];
+  reportId: string;
+}
+
 const NAV_MAIN: NavItem[] = [
   { id: "dashboard", label: "Dashboard", href: "/" },
   { id: "candidates", label: "Candidates", href: "/", badge: 1284 },
@@ -604,6 +615,44 @@ function TopBar({
    Interview features
 ═══════════════════════════════════════════════════════════════════════════ */
 
+function CvContextCard({ data }: { data: CvPrefill }) {
+  return (
+    <Card className="overflow-hidden p-0">
+      <div className="border-b border-indigo-200 bg-indigo-50/60 px-5 py-3 dark:border-indigo-500/30 dark:bg-indigo-500/10">
+        <div className="flex items-center gap-2">
+          <Icon className="h-4 w-4 text-indigo-600 dark:text-indigo-400">
+            <SvgPath name="sparkles" />
+          </Icon>
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
+            Pertanyaan dari CV Analysis — Gap-Based (STAR)
+          </h3>
+        </div>
+        <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+          Auto-generated dari gap kompetensi {data.candidateName} · {data.position}
+        </p>
+      </div>
+      <div className="divide-y divide-slate-100 px-5 dark:divide-slate-800">
+        {data.questions.map((q) => (
+          <div key={q.id} className="flex gap-3 py-4">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-bold text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300">
+              {q.id}
+            </div>
+            <div>
+              <span className="inline-block rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                {q.category}
+              </span>
+              <p className="mt-1.5 text-sm font-medium text-slate-900 dark:text-white">{q.question}</p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                <span className="font-medium">Rationale:</span> {q.rationale}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 function QuestionCard({ q, index }: { q: InterviewQuestion; index: number }) {
   const style = TYPE_STYLES[q.type];
   return (
@@ -850,6 +899,7 @@ export default function InterviewPage() {
   ]);
   const [generating, setGenerating] = useState(false);
   const [pack, setPack] = useState<QuestionPack | null>(null);
+  const [cvAnalysisData, setCvAnalysisData] = useState<CvPrefill | null>(null);
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
@@ -865,6 +915,16 @@ export default function InterviewPage() {
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
   }, [theme]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const pos = params.get("position");
+    if (pos) setPosition(decodeURIComponent(pos));
+    try {
+      const stored = sessionStorage.getItem("interview_prefill");
+      if (stored) setCvAnalysisData(JSON.parse(stored));
+    } catch { /* ignore */ }
+  }, []);
 
   const cycleTheme = useCallback(() => {
     setTheme((t) => (t === "light" ? "dark" : t === "dark" ? "system" : "light"));
@@ -952,6 +1012,38 @@ export default function InterviewPage() {
               </h1>
               <p className="text-sm text-slate-500">Structured question kits & scoring guides</p>
             </div>
+
+            {cvAnalysisData && (
+              <div className="rounded-xl border border-indigo-200 bg-indigo-50/80 px-5 py-4 dark:border-indigo-500/30 dark:bg-indigo-500/10">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white">
+                      <Icon className="h-5 w-5"><SvgPath name="scan" /></Icon>
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white">Pre-filled dari CV Analysis</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {cvAnalysisData.candidateName} · {cvAnalysisData.position} · {cvAnalysisData.department}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-center">
+                      <p className="text-lg font-bold text-slate-900 dark:text-white">{cvAnalysisData.overallScore}</p>
+                      <p className="text-[10px] text-slate-500">Score</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-lg font-bold text-blue-600 dark:text-blue-400">{cvAnalysisData.matchScore}%</p>
+                      <p className="text-[10px] text-slate-500">Match</p>
+                    </div>
+                    <span className="rounded-full border border-indigo-400 px-2.5 py-0.5 text-xs font-semibold text-indigo-700 dark:border-indigo-400 dark:text-indigo-300">
+                      {cvAnalysisData.recommendation}
+                    </span>
+                  </div>
+                </div>
+                <p className="mt-2 font-mono text-xs text-slate-400">{cvAnalysisData.reportId}</p>
+              </div>
+            )}
 
             <div className="grid gap-6 xl:grid-cols-5">
               <div className="xl:col-span-2">
@@ -1119,7 +1211,12 @@ export default function InterviewPage() {
                   </Card>
                 )}
 
-                {!generating && pack && <ResultsPanel pack={pack} />}
+                {!generating && pack && (
+                  <div className="space-y-4">
+                    {cvAnalysisData && <CvContextCard data={cvAnalysisData} />}
+                    <ResultsPanel pack={pack} />
+                  </div>
+                )}
               </div>
             </div>
           </div>
