@@ -12,14 +12,18 @@ import {
   INTERVIEW_TYPE_MAP,
   type RubricLevel,
 } from "@/lib/competency-framework";
-import Link from "next/link";
+import {
+  findCandidateByName, createCandidate, saveInterviewResult,
+  type InterviewResultSnapshot,
+} from "@/lib/store";
+import { AppShell, Icon, SvgPath, ICON_PATHS, Card, Button, Label, inputClass, cn } from "@/components/app-shell";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Types & constants
 ═══════════════════════════════════════════════════════════════════════════ */
 
-type Theme = "light" | "dark" | "system";
 type InterviewType = "Behavioral" | "Technical" | "Leadership" | "Cultural Fit";
 type Seniority =
   | "Junior"
@@ -28,12 +32,12 @@ type Seniority =
   | "Staff"
   | "Principal"
   | "Director";
+type ScoringState = "idle" | "scoring" | "complete";
+type PositionCluster = "hr" | "tech" | "business" | "finance";
 
-interface NavItem {
-  id: string;
-  label: string;
-  href: string;
-  badge?: number;
+interface QuestionScore {
+  rating: 1 | 2 | 3 | 4 | 5 | null;
+  notes: string;
 }
 
 interface InterviewQuestion {
@@ -68,23 +72,6 @@ interface CvPrefill {
   questions: { id: number; category: string; question: string; rationale: string }[];
   reportId: string;
 }
-
-const NAV_MAIN: NavItem[] = [
-  { id: "dashboard", label: "Dashboard", href: "/" },
-  { id: "candidates", label: "Candidates", href: "/", badge: 1284 },
-  { id: "roles", label: "Open Roles", href: "/", badge: 47 },
-  { id: "interviews", label: "Interviews", href: "/", badge: 18 },
-  { id: "analytics", label: "Analytics", href: "/" },
-  { id: "reports", label: "Reports", href: "/" },
-];
-
-const NAV_TOOLS: NavItem[] = [
-  { id: "cv-analyzer", label: "CV Analyzer", href: "/cv-analyzer" },
-  { id: "interview-workspace", label: "Interview Workspace", href: "/interview" },
-  { id: "hiring-report", label: "Hiring Report", href: "/report" },
-  { id: "integrations", label: "Integrations", href: "/" },
-  { id: "settings", label: "Settings", href: "/" },
-];
 
 const SENIORITY_LEVELS: Seniority[] = [
   "Junior",
@@ -132,483 +119,297 @@ function rubricFor(id: string): RubricLevel[] {
   return COMPETENCY_BY_ID[id]?.rubric ?? [];
 }
 
+function detectCluster(position: string): PositionCluster {
+  const p = position.toLowerCase();
+  const HR = ["hr ", " hr", "human resource", "hrd", "hrga", "hrbp", "rekrutmen", "talent acquisition", "talent management", "payroll", "people ops", "industrial relation"];
+  const FINANCE = ["finance", "financial", "accounting", "accountant", "keuangan", "treasury", "tax", "audit", "controller", "cfo", "investment", "banking", "compliance", "budget analyst"];
+  const TECH = ["engineer", "developer", "software", "backend", "frontend", "fullstack", "mobile dev", "data scientist", "data engineer", "ml engineer", "devops", "cloud", "cybersecurity", "solution architect", "tech lead", "programmer", "qa ", "sre", "platform"];
+  if (HR.some(k => p.includes(k))) return "hr";
+  if (FINANCE.some(k => p.includes(k))) return "finance";
+  if (TECH.some(k => p.includes(k))) return "tech";
+  return "business";
+}
+
+const TECH_QUESTION_POOL: InterviewQuestion[] = [
+  {
+    id: "TB1", type: "Behavioral", competencyId: "tech-collab", competencyName: "Engineering Collaboration",
+    question: "Ceritakan situasi di mana Anda harus men-debug masalah kritis di production bersama tim. Bagaimana Anda membagi tugas dan mengkomunikasikan progress?",
+    strongAnswer: "Structured incident response (on-call runbook); clear ownership; post-mortem culture; measurable MTTR improvement.",
+    redFlags: ["No structured process", "Blame shifting", "No post-mortem"],
+    rubric: [],
+  },
+  {
+    id: "TB2", type: "Behavioral", competencyId: "tech-delivery", competencyName: "Delivery & Ownership",
+    question: "Berikan contoh fitur atau sistem yang Anda deliver dari awal hingga production. Apa trade-off teknikal terbesar yang Anda buat dan mengapa?",
+    strongAnswer: "Clear scope, explicit trade-off reasoning (speed vs. correctness vs. cost), measurable outcome, learned lessons applied.",
+    redFlags: ["No ownership taken", "Cannot articulate trade-offs", "No production metrics"],
+    rubric: [],
+  },
+  {
+    id: "TT1", type: "Technical", competencyId: "tech-design", competencyName: "System Design",
+    question: "Rancang sistem yang skalabel untuk menangani 1 juta request/hari. Jelaskan komponen utama, bottleneck potensial, dan strategi mitigasi.",
+    strongAnswer: "Load balancer, caching layer, async queues, DB sharding/replication; identifies CAP trade-offs; concrete latency/throughput targets.",
+    redFlags: ["Single-server solution only", "No caching consideration", "Cannot discuss failure modes"],
+    rubric: [],
+  },
+  {
+    id: "TT2", type: "Technical", competencyId: "tech-quality", competencyName: "Code Quality & Testing",
+    question: "Bagaimana Anda memastikan kualitas kode di tim — strategi testing, code review, dan technical debt management?",
+    strongAnswer: "Layered tests (unit/integration/e2e); meaningful PR review culture; measurable test coverage; tech-debt sprint allocation.",
+    redFlags: ["No tests", "Superficial code review", "Tech debt ignored"],
+    rubric: [],
+  },
+  {
+    id: "TL1", type: "Leadership", competencyId: "tech-leadership", competencyName: "Technical Leadership",
+    question: "Bagaimana Anda membimbing junior engineer untuk grow secara teknikal? Berikan contoh konkret mentorship yang memberikan dampak nyata.",
+    strongAnswer: "Structured 1-1s; tailored growth plan; code review as teaching; measurable skill improvement in mentee.",
+    redFlags: ["Delegates only without guidance", "No growth plan", "Cannot recall specific impact"],
+    rubric: [],
+  },
+  {
+    id: "TL2", type: "Leadership", competencyId: "tech-influence", competencyName: "Technical Influence",
+    question: "Ceritakan saat Anda mengadvokasi perubahan arsitektur atau teknologi baru di organisasi. Bagaimana Anda membangun konsensus?",
+    strongAnswer: "Data-backed proposal; addresses concerns; phased rollout plan; wins key stakeholders; documents decision.",
+    redFlags: ["Top-down authority only", "No data", "Cannot handle pushback"],
+    rubric: [],
+  },
+  {
+    id: "TC1", type: "Cultural Fit", competencyId: "tech-learning", competencyName: "Continuous Learning",
+    question: "Teknologi berubah cepat — bagaimana Anda tetap up-to-date? Berikan contoh teknologi yang Anda pelajari sendiri dan berhasil diterapkan.",
+    strongAnswer: "Structured learning habits; specific example with applied outcome; contributes knowledge back (blog/talk/PR).",
+    redFlags: ["No self-learning", "Cannot cite recent examples", "Waits to be told what to learn"],
+    rubric: [],
+  },
+  {
+    id: "TC2", type: "Cultural Fit", competencyId: "tech-collab2", competencyName: "Cross-functional Collaboration",
+    question: "Ceritakan pengalaman bekerja dengan Product atau Design untuk deliver fitur — friction apa yang muncul dan bagaimana Anda mengatasinya?",
+    strongAnswer: "Proactive collaboration; early design review; translates tech constraints clearly; resolves friction via process improvement.",
+    redFlags: ["Silo mentality", "Blames Product/Design", "No process improvement"],
+    rubric: [],
+  },
+];
+
+const BUSINESS_QUESTION_POOL: InterviewQuestion[] = [
+  {
+    id: "BB1", type: "Behavioral", competencyId: "biz-execution", competencyName: "Results Orientation",
+    question: "Ceritakan pencapaian bisnis terbesar Anda dalam 2 tahun terakhir — metric apa yang digerakkan dan bagaimana kontribusi Anda?",
+    strongAnswer: "Specific KPIs cited; clear personal contribution; overcame obstacles; outcome sustained.",
+    redFlags: ["Vague outcome", "Team credit only", "No metrics"],
+    rubric: [],
+  },
+  {
+    id: "BB2", type: "Behavioral", competencyId: "biz-adaptability", competencyName: "Adaptability",
+    question: "Berikan contoh saat strategi bisnis Anda harus berubah drastis karena perubahan pasar. Bagaimana Anda memimpin pivot tersebut?",
+    strongAnswer: "Reads market signals early; clear pivot rationale; team alignment; measurable recovery/growth after pivot.",
+    redFlags: ["Rigid to original plan", "Blames external factors", "No team management"],
+    rubric: [],
+  },
+  {
+    id: "BT1", type: "Technical", competencyId: "biz-analysis", competencyName: "Business Analysis",
+    question: "Bagaimana Anda menganalisis peluang bisnis baru? Walk-through framework yang biasanya Anda gunakan dengan contoh nyata.",
+    strongAnswer: "Structured framework (market sizing, competitive, unit economics); hypothesis-driven; data sources cited; decision criteria clear.",
+    redFlags: ["Gut-feel only", "No framework", "Cannot size market"],
+    rubric: [],
+  },
+  {
+    id: "BT2", type: "Technical", competencyId: "biz-data", competencyName: "Data-Driven Decision Making",
+    question: "Ceritakan keputusan bisnis penting yang Anda ambil berdasarkan data. Data apa yang Anda kumpulkan dan bagaimana Anda menginterpretasinya?",
+    strongAnswer: "Specific data sources; statistical awareness; action taken from insight; result measured.",
+    redFlags: ["Data not used", "Correlation vs causation confused", "No follow-up measurement"],
+    rubric: [],
+  },
+  {
+    id: "BL1", type: "Leadership", competencyId: "biz-leadership", competencyName: "Strategic Leadership",
+    question: "Bagaimana Anda menyelaraskan tim Anda dengan tujuan strategis perusahaan? Berikan contoh cascading goals yang berhasil.",
+    strongAnswer: "OKR/KPI cascade; regular alignment check-ins; autonomy within boundaries; team understands 'why'.",
+    redFlags: ["Top-down diktat", "Team not aware of strategy", "No accountability mechanism"],
+    rubric: [],
+  },
+  {
+    id: "BL2", type: "Leadership", competencyId: "biz-influence", competencyName: "Stakeholder Influence",
+    question: "Ceritakan situasi di mana Anda harus meyakinkan eksekutif senior untuk mendukung inisiatif Anda tanpa otoritas langsung.",
+    strongAnswer: "Builds coalition; tailors message to audience; addresses objections; secures commitment; delivers on promise.",
+    redFlags: ["Cannot influence up", "Gives up without pushback", "No follow-through"],
+    rubric: [],
+  },
+  {
+    id: "BC1", type: "Cultural Fit", competencyId: "biz-values", competencyName: "Values Alignment",
+    question: "Nilai bisnis apa yang paling penting bagi Anda? Ceritakan situasi di mana nilai itu diuji dan bagaimana Anda meresponnya.",
+    strongAnswer: "Authentic specific values; example under pressure; integrity maintained; learns from experience.",
+    redFlags: ["Generic answer", "Values not tested", "Inconsistency detected"],
+    rubric: [],
+  },
+  {
+    id: "BC2", type: "Cultural Fit", competencyId: "biz-growth", competencyName: "Growth Mindset",
+    question: "Apa kegagalan terbesar Anda dalam karier bisnis dan apa yang Anda pelajari? Bagaimana Anda menerapkan pelajaran tersebut setelahnya?",
+    strongAnswer: "Genuine self-reflection; specific failure; clear learnings; applied change measurable.",
+    redFlags: ["Reframes failure as success", "Blames others", "No specific lesson applied"],
+    rubric: [],
+  },
+];
+
+const FINANCE_QUESTION_POOL: InterviewQuestion[] = [
+  {
+    id: "FB1", type: "Behavioral", competencyId: "fin-integrity", competencyName: "Financial Integrity",
+    question: "Ceritakan situasi di mana Anda menemukan ketidaksesuaian material dalam laporan keuangan. Langkah apa yang Anda ambil?",
+    strongAnswer: "Follows escalation protocol; documents evidence; involves compliance/legal; resolves with proper trail.",
+    redFlags: ["Suppresses findings", "No escalation", "Vague response"],
+    rubric: [],
+  },
+  {
+    id: "FB2", type: "Behavioral", competencyId: "fin-deadline", competencyName: "Reporting Under Pressure",
+    question: "Bagaimana Anda mengelola proses penutupan buku akhir kuartal saat ada tekanan waktu tinggi?",
+    strongAnswer: "Clear close calendar; prioritized tasks; team coordination; reconciliation checklist; continuous improvement of close timeline.",
+    redFlags: ["No structure", "Errors found post-close", "Cannot describe process"],
+    rubric: [],
+  },
+  {
+    id: "FT1", type: "Technical", competencyId: "fin-analysis", competencyName: "Financial Analysis",
+    question: "Jelaskan bagaimana Anda membangun model keuangan untuk evaluasi investasi baru. Asumsi apa yang paling kritis?",
+    strongAnswer: "DCF/IRR/NPV explained correctly; sensitivity analysis; key assumptions tested; decision criteria clear.",
+    redFlags: ["Cannot build model", "No sensitivity analysis", "Single scenario only"],
+    rubric: [],
+  },
+  {
+    id: "FT2", type: "Technical", competencyId: "fin-risk", competencyName: "Risk Management",
+    question: "Bagaimana Anda mengidentifikasi dan memitigasi risiko keuangan dalam portofolio atau operasi bisnis?",
+    strongAnswer: "Risk matrix; hedging strategies; monitoring KRIs; escalation triggers defined; documented process.",
+    redFlags: ["Risk ignored", "Reactive only", "No documentation"],
+    rubric: [],
+  },
+  {
+    id: "FL1", type: "Leadership", competencyId: "fin-business-partner", competencyName: "Finance Business Partnering",
+    question: "Bagaimana Anda membangun hubungan yang efektif dengan non-finance leaders untuk mendorong keputusan berbasis data keuangan?",
+    strongAnswer: "Translates financial concepts; proactive insights not just reports; trusted advisor role; measurable impact.",
+    redFlags: ["Finance-only perspective", "Cannot simplify for business", "Reactive reporting only"],
+    rubric: [],
+  },
+  {
+    id: "FL2", type: "Leadership", competencyId: "fin-team", competencyName: "Finance Team Leadership",
+    question: "Ceritakan bagaimana Anda membangun kapabilitas tim finance — dari hiring hingga pengembangan kompetensi teknikal.",
+    strongAnswer: "Competency framework; structured development plan; stretch assignments; retention strategy.",
+    redFlags: ["No development plan", "High turnover team", "Technical skill not measured"],
+    rubric: [],
+  },
+  {
+    id: "FC1", type: "Cultural Fit", competencyId: "fin-compliance", competencyName: "Compliance Mindset",
+    question: "Bagaimana Anda memastikan tim tetap patuh terhadap regulasi keuangan yang berubah (PSAK, IFRS, pajak)?",
+    strongAnswer: "Continuous monitoring; training program; external advisor network; embedded compliance culture.",
+    redFlags: ["Reactive compliance only", "No training program", "External changes missed"],
+    rubric: [],
+  },
+  {
+    id: "FC2", type: "Cultural Fit", competencyId: "fin-innovation", competencyName: "Finance Innovation",
+    question: "Berikan contoh bagaimana Anda menggunakan teknologi (ERP, BI tools, automation) untuk meningkatkan efisiensi fungsi finance.",
+    strongAnswer: "Specific tools; quantified time/cost savings; adoption strategy; scalable implementation.",
+    redFlags: ["Manual-only approach", "No technology adoption", "Cannot quantify improvement"],
+    rubric: [],
+  },
+];
+
 function buildMockQuestions(
   position: string,
   seniority: Seniority,
   types: InterviewType[],
 ): InterviewQuestion[] {
-  const all: InterviewQuestion[] = [
-    {
-      id: "B1",
-      type: "Behavioral",
-      competencyId: "ulrich-credible-activist",
-      competencyName: "Credible Activist",
-      question: `Ceritakan situasi di mana Anda membela keputusan berbasis data terhadap manajemen senior terkait ${position}. Apa hasilnya?`,
-      strongAnswer:
-        "STAR format; ethical framing; measurable influence on decision; maintains relationships.",
-      redFlags: ["Avoids conflict", "No data cited", "Damages trust with stakeholders"],
-      rubric: rubricFor("ulrich-credible-activist"),
-    },
-    {
-      id: "B2",
-      type: "Behavioral",
-      competencyId: "skkni-hubungan-industrial",
-      competencyName: "Hubungan Industrial",
-      question:
-        "Bagaimana Anda menangani situasi ketenagakerjaan sensitif (mis. PK/Bipartit atau kepatuhan UU Ketenagakerjaan)?",
-      strongAnswer:
-        "References Indonesian labor law basics; mediation steps; documentation; escalation path.",
-      redFlags: ["Unaware of PK/Bipartit", "Reactive only", "Non-compliance risk"],
-      rubric: rubricFor("skkni-hubungan-industrial"),
-    },
-    {
-      id: "T1",
-      type: "Technical",
-      competencyId: "ulrich-technology-proponent",
-      competencyName: "Technology Proponent",
-      question: `Sebagai ${seniority} ${position}, bagaimana Anda menggunakan people analytics untuk keputusan SDM?`,
-      strongAnswer:
-        "Specific metrics, dashboards, decision changed by data; validity-aware (work sample r ≈ 0.54).",
-      redFlags: ["No metrics", "Manual-only HR", "Cannot explain analytics logic"],
-      rubric: rubricFor("ulrich-technology-proponent"),
-    },
-    {
-      id: "T2",
-      type: "Technical",
-      competencyId: "skkni-rekrutmen",
-      competencyName: "Rekrutmen & Seleksi",
-      question:
-        "Jelaskan proses seleksi terstruktur yang pernah Anda desain — kriteria kompetensi, rubrik, dan validitas prediktif.",
-      strongAnswer:
-        "Structured interview guide; competency rubrics; avoids unstructured bias (r ≈ 0.38).",
-      redFlags: ["Ad-hoc interviews only", "No scoring rubric", "Discrimination risk"],
-      rubric: rubricFor("skkni-rekrutmen"),
-    },
-    {
-      id: "L1",
-      type: "Leadership",
-      competencyId: "ulrich-strategic-positioner",
-      competencyName: "Strategic Positioner",
-      question: `Bagaimana Anda menyelaraskan rencana SDM dengan strategi bisnis untuk ${position}?`,
-      strongAnswer:
-        "Workforce plan linked to KPIs; scenario planning; executive alignment.",
-      redFlags: ["HR siloed from strategy", "No KPI link", "Cannot articulate business case"],
-      rubric: rubricFor("ulrich-strategic-positioner"),
-    },
-    {
-      id: "L2",
-      type: "Leadership",
-      competencyId: "skkni-kinerja",
-      competencyName: "Manajemen Kinerja",
-      question:
-        "Berikan contoh siklus manajemen kinerja yang Anda pimpin — KPI, feedback, dan tindak lanjut.",
-      strongAnswer:
-        "Full cycle documented; coaching for low performers; reward linkage fair.",
-      redFlags: ["Paper exercise only", "No follow-up coaching", "Unfair ratings"],
-      rubric: rubricFor("skkni-kinerja"),
-    },
-    {
-      id: "C1",
-      type: "Cultural Fit",
-      competencyId: "ulrich-credible-activist",
-      competencyName: "Credible Activist",
-      question:
-        "Nilai keselarasan nilai Anda dengan budaya perusahaan kami — apa potensi gesekan dan mitigasinya?",
-      strongAnswer:
-        "Honest self-assessment; examples; asks about norms; credible activist tone.",
-      redFlags: ["Generic answer", "Blames past employers", "Misaligned values"],
-      rubric: rubricFor("ulrich-credible-activist"),
-    },
-    {
-      id: "C2",
-      type: "Cultural Fit",
-      competencyId: "skkni-perencanaan",
-      competencyName: "Perencanaan SDM",
-      question: `Mengapa ${position} di perusahaan kami sekarang — rencana 90 hari pertama Anda?`,
-      strongAnswer:
-        "SKKNI-aligned workforce planning hooks; 30/60/90 with learning goals.",
-      redFlags: ["Title/comp only motivation", "No research", "Unrealistic plan"],
-      rubric: rubricFor("skkni-perencanaan"),
-    },
-  ];
+  const cluster = detectCluster(position);
 
-  return all.filter((q) => types.includes(q.type));
+  let pool: InterviewQuestion[];
+  if (cluster === "tech") pool = TECH_QUESTION_POOL;
+  else if (cluster === "business") pool = BUSINESS_QUESTION_POOL;
+  else if (cluster === "finance") pool = FINANCE_QUESTION_POOL;
+  else pool = HR_QUESTION_POOL;
+
+  // Inject position/seniority into question text
+  return pool
+    .filter((q) => types.includes(q.type))
+    .map((q) => ({
+      ...q,
+      question: q.question
+        .replace(/\{position\}/g, position)
+        .replace(/\{seniority\}/g, seniority),
+    }));
 }
+
+const HR_QUESTION_POOL: InterviewQuestion[] = [
+  {
+    id: "B1", type: "Behavioral", competencyId: "ulrich-credible-activist", competencyName: "Credible Activist",
+    question: "Ceritakan situasi di mana Anda membela keputusan berbasis data terhadap manajemen senior terkait posisi HR. Apa hasilnya?",
+    strongAnswer: "STAR format; ethical framing; measurable influence on decision; maintains relationships.",
+    redFlags: ["Avoids conflict", "No data cited", "Damages trust with stakeholders"],
+    rubric: rubricFor("ulrich-credible-activist"),
+  },
+  {
+    id: "B2", type: "Behavioral", competencyId: "skkni-hubungan-industrial", competencyName: "Hubungan Industrial",
+    question: "Bagaimana Anda menangani situasi ketenagakerjaan sensitif (mis. PK/Bipartit atau kepatuhan UU Ketenagakerjaan)?",
+    strongAnswer: "References Indonesian labor law basics; mediation steps; documentation; escalation path.",
+    redFlags: ["Unaware of PK/Bipartit", "Reactive only", "Non-compliance risk"],
+    rubric: rubricFor("skkni-hubungan-industrial"),
+  },
+  {
+    id: "T1", type: "Technical", competencyId: "ulrich-technology-proponent", competencyName: "Technology Proponent",
+    question: "Bagaimana Anda menggunakan people analytics untuk keputusan SDM?",
+    strongAnswer: "Specific metrics, dashboards, decision changed by data; validity-aware (work sample r ≈ 0.54).",
+    redFlags: ["No metrics", "Manual-only HR", "Cannot explain analytics logic"],
+    rubric: rubricFor("ulrich-technology-proponent"),
+  },
+  {
+    id: "T2", type: "Technical", competencyId: "skkni-rekrutmen", competencyName: "Rekrutmen & Seleksi",
+    question: "Jelaskan proses seleksi terstruktur yang pernah Anda desain — kriteria kompetensi, rubrik, dan validitas prediktif.",
+    strongAnswer: "Structured interview guide; competency rubrics; avoids unstructured bias (r ≈ 0.38).",
+    redFlags: ["Ad-hoc interviews only", "No scoring rubric", "Discrimination risk"],
+    rubric: rubricFor("skkni-rekrutmen"),
+  },
+  {
+    id: "L1", type: "Leadership", competencyId: "ulrich-strategic-positioner", competencyName: "Strategic Positioner",
+    question: "Bagaimana Anda menyelaraskan rencana SDM dengan strategi bisnis organisasi?",
+    strongAnswer: "Workforce plan linked to KPIs; scenario planning; executive alignment.",
+    redFlags: ["HR siloed from strategy", "No KPI link", "Cannot articulate business case"],
+    rubric: rubricFor("ulrich-strategic-positioner"),
+  },
+  {
+    id: "L2", type: "Leadership", competencyId: "skkni-kinerja", competencyName: "Manajemen Kinerja",
+    question: "Berikan contoh siklus manajemen kinerja yang Anda pimpin — KPI, feedback, dan tindak lanjut.",
+    strongAnswer: "Full cycle documented; coaching for low performers; reward linkage fair.",
+    redFlags: ["Paper exercise only", "No follow-up coaching", "Unfair ratings"],
+    rubric: rubricFor("skkni-kinerja"),
+  },
+  {
+    id: "C1", type: "Cultural Fit", competencyId: "ulrich-credible-activist", competencyName: "Credible Activist",
+    question: "Nilai keselarasan nilai Anda dengan budaya perusahaan kami — apa potensi gesekan dan mitigasinya?",
+    strongAnswer: "Honest self-assessment; examples; asks about norms; credible activist tone.",
+    redFlags: ["Generic answer", "Blames past employers", "Misaligned values"],
+    rubric: rubricFor("ulrich-credible-activist"),
+  },
+  {
+    id: "C2", type: "Cultural Fit", competencyId: "skkni-perencanaan", competencyName: "Perencanaan SDM",
+    question: "Mengapa tertarik posisi ini sekarang — rencana 90 hari pertama Anda?",
+    strongAnswer: "SKKNI-aligned workforce planning hooks; 30/60/90 with learning goals.",
+    redFlags: ["Title/comp only motivation", "No research", "Unrealistic plan"],
+    rubric: rubricFor("skkni-perencanaan"),
+  },
+];
 
 function buildInterviewerNotes(
   position: string,
   seniority: Seniority,
   types: InterviewType[],
 ): string[] {
+  const cluster = detectCluster(position);
+  const frameworkLabel =
+    cluster === "tech" ? "SFIA v8" :
+    cluster === "finance" ? "CGMA / CIMA" :
+    cluster === "hr" ? "Ulrich + SKKNI" :
+    "Lominger / Korn Ferry";
+
   return [
     `Use structured interviews only (Schmidt & Hunter, 1998: r ≈ 0.51) — avoid unstructured ad-hoc questions (r ≈ 0.38).`,
-    `Calibrate to ${seniority} bar using Ulrich + SKKNI rubrics per question.`,
+    `Calibrate to ${seniority} bar using ${frameworkLabel} competency rubrics.`,
     `Allocate ~${Math.max(45, types.length * 15)} minutes across: ${types.join(", ")}.`,
     `Map scores to competencies: ${types.flatMap((t) => INTERVIEW_TYPE_MAP[t]).join(", ")}.`,
-    `For ${position}, supplement with work samples where possible (r ≈ 0.54).`,
+    `For ${position} (${cluster} cluster), supplement with work samples where possible (r ≈ 0.54).`,
     "Document verbatim quotes for scores ≥4 or any red-flag; reference checks supplementary only (r ≈ 0.26).",
   ];
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   Icons & utilities
-═══════════════════════════════════════════════════════════════════════════ */
-
-function cn(...classes: (string | false | undefined)[]) {
-  return classes.filter(Boolean).join(" ");
-}
-
-function Icon({
-  children,
-  className = "h-5 w-5",
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <svg
-      className={className}
-      fill="none"
-      viewBox="0 0 24 24"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      aria-hidden="true"
-    >
-      {children}
-    </svg>
-  );
-}
-
-const PATHS = {
-  dashboard:
-    "M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z",
-  users:
-    "M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z",
-  briefcase:
-    "M20.25 14.15v4.25c0 1.094-.787 2.036-1.872 2.18-2.087.277-4.216.42-6.378.42s-4.291-.143-6.378-.42c-1.085-.144-1.872-1.086-1.872-2.18v-4.25m16.5 0a2.18 2.18 0 00.75-1.661V8.706c0-1.081-.768-2.015-1.837-2.175a48.114 48.114 0 00-3.413-.387m4.5 8.006c-.763.183-1.555.349-2.373.49m-11.31 0a48.11 48.11 0 01-2.373-.49 2.25 2.25 0 01-1.837-2.175V6.75a2.18 2.18 0 00.75-1.661m0 0A48.118 48.118 0 0012 3c2.356 0 4.692.284 6.978.832M12 3v1.5m0 0V3m0 1.5h6.75",
-  calendar:
-    "M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5",
-  chart:
-    "M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z",
-  document:
-    "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75M9.75 21v-7.875a3.375 3.375 0 013.375-3.375h3.375M9.75 21H5.625a1.125 1.125 0 01-1.125-1.125v-9.75a1.125 1.125 0 011.125-1.125h9.75",
-  scan:
-    "M7.5 3.75H6A2.25 2.25 0 003.75 6v1.5M16.5 3.75H18A2.25 2.25 0 0120.25 6v1.5M16.5 20.25H18A2.25 2.25 0 0120.25 18v-1.5M7.5 20.25H6A2.25 2.25 0 003.75 18v-1.5M9 12.75h6",
-  workspace:
-    "M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25",
-  report:
-    "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75v-.75V4.875C9.75 4.256 10.306 3.75 11 3.75H15M9.75 15.75h4.5M9.75 12h4.5m-6-3h1.5m-1.5 3h1.5m-1.5 3h1.5",
-  cog: "M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z",
-  plug: "M13.5 6.75H12v4.5h1.5m-1.5-9h1.5m-3.75 3h15a2.25 2.25 0 012.25 2.25v6.75A2.25 2.25 0 0118 18.75H6A2.25 2.25 0 013.75 16.5v-6.75A2.25 2.25 0 016 7.5h1.5m9 0V6a2.25 2.25 0 00-2.25-2.25H9.75A2.25 2.25 0 007.5 6v1.5",
-  menu: "M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5",
-  close: "M6 18L18 6M6 6l12 12",
-  chevron: "M8.25 4.5l7.5 7.5-7.5 7.5",
-  chevronDown: "M19.5 8.25l-7.5 7.5-7.5-7.5",
-  sun: "M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z",
-  moon: "M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z",
-  bell: "M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0",
-  sparkles:
-    "M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z",
-  clipboard:
-    "M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c.712 0 1.35.217 1.894.591M9 6.75h.008v.008H9V6.75z",
-  play: "M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z",
-  check:
-    "M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
-  flag:
-    "M3 3v1.5M3 21v-6m0 0h7.5m-7.5 0H3m4.5-6h7.5M21 3v18m0 0h-7.5m7.5 0H21m-4.5 0v-6m0 6h-7.5m7.5-6v-6m0 6H10.5m7.5 0V9.75",
-  star: "M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z",
-  download:
-    "M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3",
-} as const;
-
-const NAV_ICON_MAP: Record<string, keyof typeof PATHS> = {
-  dashboard: "dashboard",
-  candidates: "users",
-  roles: "briefcase",
-  interviews: "calendar",
-  analytics: "chart",
-  reports: "document",
-  "cv-analyzer": "scan",
-  "interview-workspace": "workspace",
-  "hiring-report": "report",
-  integrations: "plug",
-  settings: "cog",
-};
-
-function SvgPath({ name }: { name: keyof typeof PATHS }) {
-  return (
-    <path strokeLinecap="round" strokeLinejoin="round" d={PATHS[name]} />
-  );
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   UI primitives
-═══════════════════════════════════════════════════════════════════════════ */
-
-function Card({
-  children,
-  className,
-  padding = true,
-}: {
-  children: React.ReactNode;
-  className?: string;
-  padding?: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        "rounded-xl border border-slate-200/80 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900",
-        padding && "p-5",
-        className,
-      )}
-    >
-      {children}
-    </div>
-  );
-}
-
-function Button({
-  children,
-  variant = "secondary",
-  size = "md",
-  className,
-  ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: "primary" | "secondary" | "ghost";
-  size?: "sm" | "md" | "lg";
-}) {
-  const base =
-    "inline-flex items-center justify-center gap-1.5 font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 disabled:pointer-events-none disabled:opacity-50";
-  const sizes = {
-    sm: "rounded-lg px-2.5 py-1 text-xs",
-    md: "rounded-lg px-3 py-1.5 text-sm",
-    lg: "rounded-lg px-5 py-2.5 text-sm",
-  };
-  const variants = {
-    primary:
-      "bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600",
-    secondary:
-      "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800",
-    ghost:
-      "text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800",
-  };
-  return (
-    <button className={cn(base, sizes[size], variants[variant], className)} {...props}>
-      {children}
-    </button>
-  );
-}
-
-function Label({ children, htmlFor }: { children: React.ReactNode; htmlFor?: string }) {
-  return (
-    <label
-      htmlFor={htmlFor}
-      className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300"
-    >
-      {children}
-    </label>
-  );
-}
-
-const inputClass =
-  "w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/25 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500";
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   Layout
-═══════════════════════════════════════════════════════════════════════════ */
-
-function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const renderNav = (items: NavItem[]) =>
-    items.map((item) => {
-      const active = item.id === "interview-workspace";
-      const iconKey = NAV_ICON_MAP[item.id] ?? "dashboard";
-      return (
-        <Link
-          key={item.id}
-          href={item.href}
-          onClick={onClose}
-          className={cn(
-            "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-            active
-              ? "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400"
-              : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200",
-          )}
-          aria-current={active ? "page" : undefined}
-        >
-          <Icon className="h-5 w-5 shrink-0">
-            <SvgPath name={iconKey} />
-          </Icon>
-          <span className="truncate">{item.label}</span>
-          {item.badge !== undefined && (
-            <span
-              className={cn(
-                "ml-auto rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums",
-                active
-                  ? "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300"
-                  : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400",
-              )}
-            >
-              {item.badge > 999 ? `${(item.badge / 1000).toFixed(1)}k` : item.badge}
-            </span>
-          )}
-        </Link>
-      );
-    });
-
-  return (
-    <>
-      {open && (
-        <button
-          type="button"
-          aria-label="Close navigation"
-          className="fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm lg:hidden"
-          onClick={onClose}
-        />
-      )}
-      <aside
-        className={cn(
-          "fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-slate-200 bg-white transition-transform duration-200 ease-out dark:border-slate-800 dark:bg-slate-900 lg:static lg:translate-x-0",
-          open ? "translate-x-0" : "-translate-x-full",
-        )}
-        aria-label="Main navigation"
-      >
-        <div className="flex h-16 shrink-0 items-center gap-3 border-b border-slate-200 px-5 dark:border-slate-800">
-          <Link
-            href="/"
-            className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/20"
-          >
-            <span className="text-sm font-bold tracking-tight">HI</span>
-          </Link>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">
-              Hire Intelligence
-            </p>
-            <p className="truncate text-xs text-slate-500 dark:text-slate-400">
-              Enterprise Platform
-            </p>
-          </div>
-          <button
-            type="button"
-            className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 lg:hidden dark:hover:bg-slate-800"
-            onClick={onClose}
-            aria-label="Close menu"
-          >
-            <Icon className="h-5 w-5">
-              <SvgPath name="close" />
-            </Icon>
-          </button>
-        </div>
-
-        <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-4">
-          <div>
-            <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-              Main
-            </p>
-            <div className="space-y-0.5">{renderNav(NAV_MAIN)}</div>
-          </div>
-          <div>
-            <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-              Tools
-            </p>
-            <div className="space-y-0.5">{renderNav(NAV_TOOLS)}</div>
-          </div>
-        </nav>
-
-        <div className="shrink-0 border-t border-slate-200 p-4 dark:border-slate-800">
-          <div className="rounded-xl border border-slate-200/80 bg-slate-50 p-4 dark:border-slate-700/50 dark:bg-slate-800/50">
-            <div className="flex items-center gap-2">
-              <Icon className="h-4 w-4 text-indigo-600 dark:text-indigo-400">
-                <SvgPath name="workspace" />
-              </Icon>
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                Interview Workspace
-              </p>
-            </div>
-            <p className="mt-1 text-sm font-semibold text-slate-900 dark:text-white">
-              Structured interview kits
-            </p>
-            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-              Role-calibrated questions, rubrics, and red flags for consistent hiring panels.
-            </p>
-          </div>
-        </div>
-      </aside>
-    </>
-  );
-}
-
-function TopBar({
-  isDark,
-  onThemeToggle,
-  onMenuOpen,
-}: {
-  isDark: boolean;
-  onThemeToggle: () => void;
-  onMenuOpen: () => void;
-}) {
-  return (
-    <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-3 border-b border-slate-200 bg-white/90 px-4 backdrop-blur-md sm:gap-4 sm:px-6 dark:border-slate-800 dark:bg-slate-900/90">
-      <button
-        type="button"
-        className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 lg:hidden dark:hover:bg-slate-800"
-        onClick={onMenuOpen}
-        aria-label="Open navigation menu"
-      >
-        <Icon className="h-5 w-5">
-          <SvgPath name="menu" />
-        </Icon>
-      </button>
-      <div className="hidden min-w-0 sm:block">
-        <h1 className="truncate text-lg font-semibold text-slate-900 dark:text-white">
-          Interview Workspace
-        </h1>
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          Structured question kits & scoring guides
-        </p>
-      </div>
-      <div className="ml-auto flex items-center gap-1 sm:gap-2">
-        <button
-          type="button"
-          onClick={onThemeToggle}
-          className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
-          aria-label={`Switch to ${isDark ? "light" : "dark"} mode`}
-        >
-          <Icon className="h-5 w-5">
-            <SvgPath name={isDark ? "sun" : "moon"} />
-          </Icon>
-        </button>
-        <button
-          type="button"
-          className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
-          aria-label="Notifications"
-        >
-          <Icon className="h-5 w-5">
-            <SvgPath name="bell" />
-          </Icon>
-          <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white ring-2 ring-white dark:ring-slate-900">
-            3
-          </span>
-        </button>
-        <div className="hidden h-8 w-px bg-slate-200 md:block dark:bg-slate-700" />
-        <button
-          type="button"
-          className="flex items-center gap-2 rounded-lg py-1 pl-1 pr-2 hover:bg-slate-100 md:pr-3 dark:hover:bg-slate-800"
-          aria-label="User menu"
-        >
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-xs font-semibold text-white">
-            AK
-          </div>
-          <div className="hidden text-left lg:block">
-            <p className="text-sm font-medium text-slate-900 dark:text-white">Alex Kim</p>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Talent Lead</p>
-          </div>
-          <Icon className="hidden h-4 w-4 text-slate-400 lg:block">
-            <SvgPath name="chevronDown" />
-          </Icon>
-        </button>
-      </div>
-    </header>
-  );
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -712,7 +513,7 @@ function QuestionCard({ q, index }: { q: InterviewQuestion; index: number }) {
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Research-based rubric (1–5)
+              Research-based rubric (1-5)
             </span>
             <FrameworkPillarBadge
               pillar={
@@ -727,7 +528,258 @@ function QuestionCard({ q, index }: { q: InterviewQuestion; index: number }) {
   );
 }
 
-function ResultsPanel({ pack }: { pack: QuestionPack }) {
+/* --- Live Scoring --- */
+
+const RATING_LABELS: Record<number, string> = {
+  1: "No evidence", 2: "Below expectations", 3: "Meets expectations", 4: "Exceeds", 5: "Exceptional",
+};
+
+function ScoringPanel({
+  pack,
+  candidateName,
+  scores,
+  onScoreChange,
+  elapsedSeconds,
+  onComplete,
+}: {
+  pack: QuestionPack;
+  candidateName: string;
+  scores: Record<string, QuestionScore>;
+  onScoreChange: (id: string, rating: 1|2|3|4|5|null, notes: string) => void;
+  elapsedSeconds: number;
+  onComplete: () => void;
+}) {
+  const rated = pack.questions.filter(q => scores[q.id]?.rating != null).length;
+  const avgRating = rated === 0 ? 0 :
+    Math.round(
+      pack.questions.reduce((sum, q) => sum + (scores[q.id]?.rating ?? 0), 0) / rated * 10
+    ) / 10;
+
+  const mm = String(Math.floor(elapsedSeconds / 60)).padStart(2, "0");
+  const ss = String(elapsedSeconds % 60).padStart(2, "0");
+
+  return (
+    <div className="space-y-4">
+      <div className="sticky top-16 z-20 flex flex-col gap-3 rounded-xl border border-indigo-200 bg-indigo-50/95 px-5 py-3 backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between dark:border-indigo-500/30 dark:bg-slate-900/95">
+        <div>
+          <p className="text-sm font-semibold text-slate-900 dark:text-white">
+            Live Scoring — {candidateName || "Candidate"} · {pack.position}
+          </p>
+          <p className="text-xs text-slate-500">{rated}/{pack.questions.length} rated · avg {avgRating > 0 ? avgRating.toFixed(1) : "—"}/5</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 dark:border-slate-700 dark:bg-slate-800">
+            <Icon className="h-4 w-4 text-slate-400"><SvgPath name="clock" /></Icon>
+            <span className="font-mono text-sm font-semibold text-slate-700 dark:text-slate-300">{mm}:{ss}</span>
+          </div>
+          <Button
+            variant="primary"
+            size="md"
+            onClick={onComplete}
+            disabled={rated === 0}
+          >
+            <Icon className="h-4 w-4"><SvgPath name="check" /></Icon>
+            Complete
+          </Button>
+        </div>
+      </div>
+
+      {pack.questions.map((q, idx) => {
+        const score = scores[q.id] ?? { rating: null, notes: "" };
+        const style = TYPE_STYLES[q.type];
+        return (
+          <div key={q.id} className={cn("rounded-xl border bg-white dark:bg-slate-900", style.border)}>
+            <div className={cn("rounded-t-xl border-b px-5 py-3", style.header)}>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/70 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">{idx + 1}</span>
+                <span className={cn("inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ring-1 ring-inset", style.chip)}>{q.type}</span>
+                <span className="text-xs font-medium text-slate-600 dark:text-slate-400">{q.competencyName}</span>
+              </div>
+              <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">{q.question}</p>
+            </div>
+            <div className="space-y-4 px-5 py-4">
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Score (1-5)</p>
+                <div className="flex flex-wrap gap-2">
+                  {([1, 2, 3, 4, 5] as const).map((r) => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => onScoreChange(q.id, score.rating === r ? null : r, score.notes)}
+                      className={cn(
+                        "flex flex-col items-center rounded-lg border px-3 py-2 text-xs font-medium transition-colors",
+                        score.rating === r
+                          ? r >= 4 ? "border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
+                            : r === 3 ? "border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-300"
+                            : "border-amber-500 bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
+                          : "border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800",
+                      )}
+                    >
+                      <span className="text-base font-bold">{r}</span>
+                      <span className="mt-0.5 text-[9px] leading-tight text-center w-14">{RATING_LABELS[r]}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Notes / Verbatim quote
+                </label>
+                <textarea
+                  value={score.notes}
+                  onChange={(e) => onScoreChange(q.id, score.rating, e.target.value)}
+                  placeholder="Record candidate's exact words or key observations..."
+                  rows={2}
+                  className="w-full resize-none rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/25 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500"
+                />
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ScoringResultsPanel({
+  pack,
+  candidateName,
+  scores,
+  elapsedSeconds,
+  onBack,
+}: {
+  pack: QuestionPack;
+  candidateName: string;
+  scores: Record<string, QuestionScore>;
+  elapsedSeconds: number;
+  onBack: () => void;
+}) {
+  const router = useRouter();
+  const rated = pack.questions.filter(q => scores[q.id]?.rating != null);
+  const avgRating = rated.length === 0 ? 0 :
+    rated.reduce((sum, q) => sum + (scores[q.id]?.rating ?? 0), 0) / rated.length;
+
+  const byType = INTERVIEW_TYPES.map(type => {
+    const qs = pack.questions.filter(q => q.type === type && scores[q.id]?.rating != null);
+    if (qs.length === 0) return null;
+    const avg = qs.reduce((s, q) => s + (scores[q.id]?.rating ?? 0), 0) / qs.length;
+    return { type, avg, count: qs.length };
+  }).filter(Boolean) as { type: InterviewType; avg: number; count: number }[];
+
+  const recommendation =
+    avgRating >= 4 ? "Strong Hire" :
+    avgRating >= 3 ? "Hire" :
+    avgRating >= 2 ? "Review" : "Reject";
+
+  const recStyles = {
+    "Strong Hire": { card: "border-emerald-200 bg-emerald-50 dark:border-emerald-500/30 dark:bg-emerald-500/10", badge: "bg-emerald-600 text-white" },
+    "Hire": { card: "border-blue-200 bg-blue-50 dark:border-blue-500/30 dark:bg-blue-500/10", badge: "bg-blue-600 text-white" },
+    "Review": { card: "border-amber-200 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/10", badge: "bg-amber-600 text-white" },
+    "Reject": { card: "border-red-200 bg-red-50 dark:border-red-500/30 dark:bg-red-500/10", badge: "bg-red-600 text-white" },
+  };
+
+  const mm = String(Math.floor(elapsedSeconds / 60)).padStart(2, "0");
+  const ss = String(elapsedSeconds % 60).padStart(2, "0");
+
+  return (
+    <div className="space-y-6">
+      <div className={cn("rounded-xl border p-5", recStyles[recommendation].card)}>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-4">
+            <div className={cn("flex h-14 w-14 items-center justify-center rounded-xl text-lg font-bold text-white", recStyles[recommendation].badge)}>
+              {avgRating.toFixed(1)}
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Interview Result</p>
+              <p className="mt-0.5 text-2xl font-bold text-slate-900 dark:text-white">{recommendation}</p>
+              <p className="text-sm text-slate-500">{candidateName || "Candidate"} · {pack.position} · {pack.seniority}</p>
+            </div>
+          </div>
+          <div className="flex gap-4 text-center">
+            <div>
+              <p className="text-xl font-bold text-slate-900 dark:text-white">{rated.length}/{pack.questions.length}</p>
+              <p className="text-xs text-slate-500">Rated</p>
+            </div>
+            <div>
+              <p className="text-xl font-bold text-slate-700 dark:text-slate-300">{mm}:{ss}</p>
+              <p className="text-xs text-slate-500">Duration</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        {byType.map(({ type, avg, count }) => {
+          const style = TYPE_STYLES[type];
+          const bar = Math.round((avg / 5) * 100);
+          return (
+            <div key={type} className={cn("rounded-xl border p-4", style.header)}>
+              <div className="flex items-center justify-between">
+                <span className={cn("inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ring-1 ring-inset", style.chip)}>{type}</span>
+                <span className="font-bold tabular-nums text-slate-900 dark:text-white">{avg.toFixed(1)}/5</span>
+              </div>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+                <div className={cn("h-full rounded-full transition-all", avg >= 4 ? "bg-emerald-500" : avg >= 3 ? "bg-blue-500" : "bg-amber-500")} style={{ width: `${bar}%` }} />
+              </div>
+              <p className="mt-1 text-xs text-slate-500">{count} question{count !== 1 ? "s" : ""}</p>
+            </div>
+          );
+        })}
+      </div>
+
+      <Card className="overflow-hidden p-0">
+        <div className="border-b border-slate-200 px-5 py-3 dark:border-slate-800">
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Score Detail</h3>
+        </div>
+        <div className="divide-y divide-slate-100 dark:divide-slate-800">
+          {pack.questions.map((q, idx) => {
+            const score = scores[q.id];
+            const rating = score?.rating ?? null;
+            const style = TYPE_STYLES[q.type];
+            return (
+              <div key={q.id} className="flex gap-4 px-5 py-3">
+                <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-400">{idx + 1}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm text-slate-700 dark:text-slate-300">{q.question}</p>
+                  {score?.notes && <p className="mt-0.5 text-xs italic text-slate-400">&ldquo;{score.notes}&rdquo;</p>}
+                </div>
+                <div className="flex shrink-0 items-start gap-2">
+                  <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset", style.chip)}>{q.type.slice(0, 3)}</span>
+                  {rating != null ? (
+                    <span className={cn("flex h-7 w-7 items-center justify-center rounded-full text-sm font-bold text-white",
+                      rating >= 4 ? "bg-emerald-500" : rating === 3 ? "bg-blue-500" : "bg-amber-500"
+                    )}>{rating}</span>
+                  ) : (
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-200 text-xs text-slate-400 dark:bg-slate-700">&mdash;</span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
+      <div className="flex justify-between gap-3">
+        <Button variant="secondary" size="md" onClick={onBack}>
+          <Icon className="h-4 w-4"><SvgPath name="chevronLeft" /></Icon>
+          Back to Kit
+        </Button>
+        <div className="flex gap-2">
+          <Button variant="secondary" size="md">
+            <Icon className="h-4 w-4"><SvgPath name="download" /></Icon>
+            Export Results
+          </Button>
+          <Button variant="primary" size="md" onClick={() => router.push("/report")}>
+            <Icon className="h-4 w-4"><SvgPath name="document" /></Icon>
+            View Hiring Report
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ResultsPanel({ pack, onStartInterview }: { pack: QuestionPack; onStartInterview: () => void }) {
   const questionIndexById = useMemo(
     () => new Map(pack.questions.map((q, i) => [q.id, i + 1])),
     [pack.questions],
@@ -871,7 +923,7 @@ function ResultsPanel({ pack }: { pack: QuestionPack }) {
             </Icon>
             Export kit
           </Button>
-          <Button variant="primary" size="lg">
+          <Button variant="primary" size="lg" onClick={onStartInterview}>
             <Icon className="h-5 w-5">
               <SvgPath name="play" />
             </Icon>
@@ -888,10 +940,6 @@ function ResultsPanel({ pack }: { pack: QuestionPack }) {
 ═══════════════════════════════════════════════════════════════════════════ */
 
 export default function InterviewPage() {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [theme, setTheme] = useState<Theme>("system");
-  const [isDark, setIsDark] = useState(false);
-
   const [position, setPosition] = useState("");
   const [seniority, setSeniority] = useState<Seniority>("Senior");
   const [selectedTypes, setSelectedTypes] = useState<InterviewType[]>([
@@ -900,34 +948,72 @@ export default function InterviewPage() {
   const [generating, setGenerating] = useState(false);
   const [pack, setPack] = useState<QuestionPack | null>(null);
   const [cvAnalysisData, setCvAnalysisData] = useState<CvPrefill | null>(null);
-
-  useEffect(() => {
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const resolve = () => {
-      const dark = theme === "dark" || (theme === "system" && mq.matches);
-      setIsDark(dark);
-      document.documentElement.classList.toggle("dark", dark);
-    };
-    resolve();
-    const onChange = () => {
-      if (theme === "system") resolve();
-    };
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, [theme]);
+  const [scoringState, setScoringState] = useState<ScoringState>("idle");
+  const [scores, setScores] = useState<Record<string, QuestionScore>>({});
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const pos = params.get("position");
     if (pos) setPosition(decodeURIComponent(pos));
+    // name param is passed via cvAnalysisData from sessionStorage
     try {
       const stored = sessionStorage.getItem("interview_prefill");
       if (stored) setCvAnalysisData(JSON.parse(stored));
     } catch { /* ignore */ }
   }, []);
 
-  const cycleTheme = useCallback(() => {
-    setTheme((t) => (t === "light" ? "dark" : t === "dark" ? "system" : "light"));
+  useEffect(() => {
+    if (scoringState !== "scoring") return;
+    const id = setInterval(() => setElapsedSeconds((s) => s + 1), 1000);
+    return () => clearInterval(id);
+  }, [scoringState]);
+
+  const handleStartInterview = useCallback(() => {
+    if (!pack) return;
+    const initial: Record<string, QuestionScore> = {};
+    pack.questions.forEach((q) => { initial[q.id] = { rating: null, notes: "" }; });
+    setScores(initial);
+    setElapsedSeconds(0);
+    setScoringState("scoring");
+  }, [pack]);
+
+  const handleScoreChange = useCallback((id: string, rating: 1|2|3|4|5|null, notes: string) => {
+    setScores((prev) => ({ ...prev, [id]: { rating, notes } }));
+  }, []);
+
+  const handleCompleteScoring = useCallback(() => {
+    setScoringState("complete");
+    // Persist to candidate store
+    if (pack) {
+      try {
+        const name = cvAnalysisData?.candidateName ?? "";
+        const pos = pack.position;
+        if (name && pos) {
+          let candidate = findCandidateByName(name, pos);
+          if (!candidate) {
+            candidate = createCandidate({ name, position: pos, department: cvAnalysisData?.department ?? "", source: "Interview" });
+          }
+          const rated = pack.questions.filter(q => scores[q.id]?.rating != null);
+          const avgRating = rated.length === 0 ? 0 : rated.reduce((s, q) => s + (scores[q.id]?.rating ?? 0), 0) / rated.length;
+          const recommendation = avgRating >= 4 ? "Strong Hire" : avgRating >= 3 ? "Hire" : avgRating >= 2 ? "Review" : "Reject";
+          const result: InterviewResultSnapshot = {
+            kitId: `KIT-${Date.now()}`,
+            avgRating,
+            recommendation,
+            durationSec: elapsedSeconds,
+            completedAt: new Date().toISOString(),
+            questionCount: pack.questions.length,
+            ratedCount: rated.length,
+          };
+          saveInterviewResult(candidate.id, result);
+        }
+      } catch { /* non-critical */ }
+    }
+  }, [pack, scores, elapsedSeconds, cvAnalysisData]);
+
+  const handleBackToKit = useCallback(() => {
+    setScoringState("idle");
   }, []);
 
   const toggleType = (type: InterviewType) => {
@@ -946,6 +1032,8 @@ export default function InterviewPage() {
     if (!canGenerate) return;
     setGenerating(true);
     setPack(null);
+    setScoringState("idle");
+    setScores({});
 
     setTimeout(() => {
       const now = new Date();
@@ -968,267 +1056,234 @@ export default function InterviewPage() {
   };
 
   return (
-    <div
-      className={cn(
-        "flex min-h-screen bg-slate-50 font-sans text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100",
-        isDark && "dark",
-      )}
-      data-theme={theme}
-    >
-      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        <TopBar
-          isDark={isDark}
-          onThemeToggle={cycleTheme}
-          onMenuOpen={() => setSidebarOpen(true)}
-        />
-
-        <main id="main-content" className="flex-1 overflow-y-auto">
-          <div className="border-b border-slate-200 bg-white px-4 py-3 sm:px-6 dark:border-slate-800 dark:bg-slate-900">
-            <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-sm">
-              <Link
-                href="/"
-                className="text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
-              >
-                Home
-              </Link>
-              <Icon className="h-3.5 w-3.5 text-slate-300">
-                <SvgPath name="chevron" />
-              </Icon>
-              <span className="font-medium text-slate-900 dark:text-white">
-                Interview Workspace
+    <AppShell activeNavId="interview-workspace" title="Interview Workspace" subtitle="Structured question kits & scoring guides">
+      {cvAnalysisData && (
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50/80 px-5 py-4 dark:border-indigo-500/30 dark:bg-indigo-500/10">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white">
+                <Icon className="h-5 w-5"><SvgPath name="scan" /></Icon>
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-900 dark:text-white">Pre-filled dari CV Analysis</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {cvAnalysisData.candidateName} · {cvAnalysisData.position} · {cvAnalysisData.department}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="text-center">
+                <p className="text-lg font-bold text-slate-900 dark:text-white">{cvAnalysisData.overallScore}</p>
+                <p className="text-[10px] text-slate-500">Score</p>
+              </div>
+              <div className="text-center">
+                <p className="text-lg font-bold text-blue-600 dark:text-blue-400">{cvAnalysisData.matchScore}%</p>
+                <p className="text-[10px] text-slate-500">Match</p>
+              </div>
+              <span className="rounded-full border border-indigo-400 px-2.5 py-0.5 text-xs font-semibold text-indigo-700 dark:border-indigo-400 dark:text-indigo-300">
+                {cvAnalysisData.recommendation}
               </span>
-              <span className="ml-auto hidden rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-medium text-indigo-700 sm:inline dark:bg-indigo-500/10 dark:text-indigo-400">
-                Panel-ready question kits
-              </span>
-            </nav>
+            </div>
           </div>
+          <p className="mt-2 font-mono text-xs text-slate-400">{cvAnalysisData.reportId}</p>
+        </div>
+      )}
 
-          <div className="space-y-6 p-4 sm:p-6">
-            <div className="sm:hidden">
-              <h1 className="text-xl font-semibold text-slate-900 dark:text-white">
-                Interview Workspace
-              </h1>
-              <p className="text-sm text-slate-500">Structured question kits & scoring guides</p>
+      <div className="grid gap-6 xl:grid-cols-5">
+        <div className="xl:col-span-2">
+          <Card>
+            <div className="flex items-center gap-2">
+              <Icon className="h-5 w-5 text-indigo-600 dark:text-indigo-400">
+                <SvgPath name="sparkles" />
+              </Icon>
+              <div>
+                <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+                  Configure Interview Kit
+                </h2>
+                <p className="text-sm text-slate-500">
+                  Role-calibrated questions with rubrics
+                </p>
+              </div>
             </div>
 
-            {cvAnalysisData && (
-              <div className="rounded-xl border border-indigo-200 bg-indigo-50/80 px-5 py-4 dark:border-indigo-500/30 dark:bg-indigo-500/10">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white">
-                      <Icon className="h-5 w-5"><SvgPath name="scan" /></Icon>
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900 dark:text-white">Pre-filled dari CV Analysis</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        {cvAnalysisData.candidateName} · {cvAnalysisData.position} · {cvAnalysisData.department}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="text-center">
-                      <p className="text-lg font-bold text-slate-900 dark:text-white">{cvAnalysisData.overallScore}</p>
-                      <p className="text-[10px] text-slate-500">Score</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-lg font-bold text-blue-600 dark:text-blue-400">{cvAnalysisData.matchScore}%</p>
-                      <p className="text-[10px] text-slate-500">Match</p>
-                    </div>
-                    <span className="rounded-full border border-indigo-400 px-2.5 py-0.5 text-xs font-semibold text-indigo-700 dark:border-indigo-400 dark:text-indigo-300">
-                      {cvAnalysisData.recommendation}
-                    </span>
-                  </div>
-                </div>
-                <p className="mt-2 font-mono text-xs text-slate-400">{cvAnalysisData.reportId}</p>
+            <form
+              className="mt-5 space-y-5"
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleGenerate();
+              }}
+            >
+              <div>
+                <Label htmlFor="position">Job position</Label>
+                <input
+                  id="position"
+                  type="text"
+                  value={position}
+                  onChange={(e) => setPosition(e.target.value)}
+                  placeholder="e.g. Senior Software Engineer"
+                  className={inputClass}
+                  required
+                />
               </div>
-            )}
 
-            <div className="grid gap-6 xl:grid-cols-5">
-              <div className="xl:col-span-2">
-                <Card>
-                  <div className="flex items-center gap-2">
-                    <Icon className="h-5 w-5 text-indigo-600 dark:text-indigo-400">
+              <div>
+                <Label htmlFor="seniority">Seniority level</Label>
+                <select
+                  id="seniority"
+                  value={seniority}
+                  onChange={(e) => setSeniority(e.target.value as Seniority)}
+                  className={cn(inputClass, "cursor-pointer")}
+                >
+                  {SENIORITY_LEVELS.map((level) => (
+                    <option key={level} value={level}>
+                      {level}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <Label>Interview type</Label>
+                <p className="mb-2 text-xs text-slate-500">
+                  Select types — 2 questions each, mapped to Ulrich / SKKNI
+                </p>
+                <div
+                  className="grid grid-cols-1 gap-2 sm:grid-cols-2"
+                  role="group"
+                  aria-label="Interview types"
+                >
+                  {INTERVIEW_TYPES.map((type) => {
+                    const selected = selectedTypes.includes(type);
+                    const style = TYPE_STYLES[type];
+                    return (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => toggleType(type)}
+                        className={cn(
+                          "flex items-center gap-2 rounded-lg border px-3 py-2.5 text-left text-sm font-medium transition-colors",
+                          selected
+                            ? cn("ring-2 ring-blue-500/40", style.border, style.header)
+                            : "border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800",
+                        )}
+                        aria-pressed={selected}
+                      >
+                        <span
+                          className={cn(
+                            "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+                            selected
+                              ? "border-blue-600 bg-blue-600 text-white"
+                              : "border-slate-300 dark:border-slate-600",
+                          )}
+                        >
+                          {selected && (
+                            <Icon className="h-3 w-3">
+                              <SvgPath name="check" />
+                            </Icon>
+                          )}
+                        </span>
+                        {type}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <Button
+                type="submit"
+                variant="primary"
+                size="lg"
+                className="w-full"
+                disabled={!canGenerate || generating}
+              >
+                {generating ? (
+                  <>
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                    Generating questions...
+                  </>
+                ) : (
+                  <>
+                    <Icon className="h-5 w-5">
                       <SvgPath name="sparkles" />
                     </Icon>
-                    <div>
-                      <h2 className="text-base font-semibold text-slate-900 dark:text-white">
-                        Configure Interview Kit
-                      </h2>
-                      <p className="text-sm text-slate-500">
-                        Role-calibrated questions with rubrics
-                      </p>
-                    </div>
-                  </div>
+                    Generate Questions
+                  </>
+                )}
+              </Button>
 
-                  <form
-                    className="mt-5 space-y-5"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      handleGenerate();
-                    }}
-                  >
-                    <div>
-                      <Label htmlFor="position">Job position</Label>
-                      <input
-                        id="position"
-                        type="text"
-                        value={position}
-                        onChange={(e) => setPosition(e.target.value)}
-                        placeholder="e.g. Senior Software Engineer"
-                        className={inputClass}
-                        required
-                      />
-                    </div>
+              {!canGenerate && !generating && (
+                <p className="text-center text-xs text-slate-400">
+                  Enter a job position and select at least one interview type
+                </p>
+              )}
+            </form>
+          </Card>
+        </div>
 
-                    <div>
-                      <Label htmlFor="seniority">Seniority level</Label>
-                      <select
-                        id="seniority"
-                        value={seniority}
-                        onChange={(e) => setSeniority(e.target.value as Seniority)}
-                        className={cn(inputClass, "cursor-pointer")}
-                      >
-                        {SENIORITY_LEVELS.map((level) => (
-                          <option key={level} value={level}>
-                            {level}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <Label>Interview type</Label>
-                      <p className="mb-2 text-xs text-slate-500">
-                        Select types — 2 questions each, mapped to Ulrich / SKKNI
-                      </p>
-                      <div
-                        className="grid grid-cols-1 gap-2 sm:grid-cols-2"
-                        role="group"
-                        aria-label="Interview types"
-                      >
-                        {INTERVIEW_TYPES.map((type) => {
-                          const selected = selectedTypes.includes(type);
-                          const style = TYPE_STYLES[type];
-                          return (
-                            <button
-                              key={type}
-                              type="button"
-                              onClick={() => toggleType(type)}
-                              className={cn(
-                                "flex items-center gap-2 rounded-lg border px-3 py-2.5 text-left text-sm font-medium transition-colors",
-                                selected
-                                  ? cn("ring-2 ring-blue-500/40", style.border, style.header)
-                                  : "border-slate-200 bg-white hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800",
-                              )}
-                              aria-pressed={selected}
-                            >
-                              <span
-                                className={cn(
-                                  "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
-                                  selected
-                                    ? "border-blue-600 bg-blue-600 text-white"
-                                    : "border-slate-300 dark:border-slate-600",
-                                )}
-                              >
-                                {selected && (
-                                  <Icon className="h-3 w-3">
-                                    <SvgPath name="check" />
-                                  </Icon>
-                                )}
-                              </span>
-                              {type}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    <Button
-                      type="submit"
-                      variant="primary"
-                      size="lg"
-                      className="w-full"
-                      disabled={!canGenerate || generating}
-                    >
-                      {generating ? (
-                        <>
-                          <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                          Generating questions…
-                        </>
-                      ) : (
-                        <>
-                          <Icon className="h-5 w-5">
-                            <SvgPath name="sparkles" />
-                          </Icon>
-                          Generate Questions
-                        </>
-                      )}
-                    </Button>
-
-                    {!canGenerate && !generating && (
-                      <p className="text-center text-xs text-slate-400">
-                        Enter a job position and select at least one interview type
-                      </p>
-                    )}
-                  </form>
-                </Card>
+        <div className="xl:col-span-3">
+          {generating && (
+            <Card className="flex flex-col items-center justify-center py-16">
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-100 dark:bg-indigo-500/20">
+                <Icon className="h-8 w-8 animate-pulse text-indigo-600 dark:text-indigo-400">
+                  <SvgPath name="clipboard" />
+                </Icon>
               </div>
-
-              <div className="xl:col-span-3">
-                {generating && (
-                  <Card className="flex flex-col items-center justify-center py-16">
-                    <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-100 dark:bg-indigo-500/20">
-                      <Icon className="h-8 w-8 animate-pulse text-indigo-600 dark:text-indigo-400">
-                        <SvgPath name="clipboard" />
-                      </Icon>
-                    </div>
-                    <p className="mt-4 font-medium text-slate-900 dark:text-white">
-                      Building interview kit…
-                    </p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      Calibrating questions, rubrics, and red flags for {seniority} level
-                    </p>
-                    <div className="mt-6 h-1.5 w-48 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
-                      <div className="h-full w-3/4 animate-pulse rounded-full bg-gradient-to-r from-indigo-500 to-blue-500" />
-                    </div>
-                  </Card>
-                )}
-
-                {!generating && !pack && (
-                  <Card className="flex flex-col items-center justify-center border-dashed py-20 text-center">
-                    <Icon className="h-12 w-12 text-slate-300 dark:text-slate-600">
-                      <SvgPath name="workspace" />
-                    </Icon>
-                    <p className="mt-4 font-medium text-slate-900 dark:text-white">
-                      No question kit yet
-                    </p>
-                    <p className="mt-1 max-w-md text-sm text-slate-500">
-                      Configure the role and interview types, then generate a structured kit with
-                      scoring rubrics and interviewer notes.
-                    </p>
-                  </Card>
-                )}
-
-                {!generating && pack && (
-                  <div className="space-y-4">
-                    {cvAnalysisData && <CvContextCard data={cvAnalysisData} />}
-                    <ResultsPanel pack={pack} />
-                  </div>
-                )}
+              <p className="mt-4 font-medium text-slate-900 dark:text-white">
+                Building interview kit...
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                Calibrating questions, rubrics, and red flags for {seniority} level
+              </p>
+              <div className="mt-6 h-1.5 w-48 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+                <div className="h-full w-3/4 animate-pulse rounded-full bg-gradient-to-r from-indigo-500 to-blue-500" />
               </div>
-            </div>
-          </div>
+            </Card>
+          )}
 
-          <footer className="border-t border-slate-200 px-6 py-4 dark:border-slate-800">
-            <div className="flex flex-col gap-2 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between dark:text-slate-400">
-              <p>© 2026 Hire Intelligence · Enterprise Hiring Platform</p>
-              <p className="tabular-nums">v2.4.1 · SOC 2 Type II · GDPR compliant</p>
+          {!generating && !pack && (
+            <Card className="flex flex-col items-center justify-center border-dashed py-20 text-center">
+              <Icon className="h-12 w-12 text-slate-300 dark:text-slate-600">
+                <SvgPath name="workspace" />
+              </Icon>
+              <p className="mt-4 font-medium text-slate-900 dark:text-white">
+                No question kit yet
+              </p>
+              <p className="mt-1 max-w-md text-sm text-slate-500">
+                Configure the role and interview types, then generate a structured kit with
+                scoring rubrics and interviewer notes.
+              </p>
+            </Card>
+          )}
+
+          {!generating && pack && scoringState === "idle" && (
+            <div className="space-y-4">
+              {cvAnalysisData && <CvContextCard data={cvAnalysisData} />}
+              <ResultsPanel pack={pack} onStartInterview={handleStartInterview} />
             </div>
-          </footer>
-        </main>
+          )}
+
+          {!generating && pack && scoringState === "scoring" && (
+            <ScoringPanel
+              pack={pack}
+              candidateName={cvAnalysisData?.candidateName ?? ""}
+              scores={scores}
+              onScoreChange={handleScoreChange}
+              elapsedSeconds={elapsedSeconds}
+              onComplete={handleCompleteScoring}
+            />
+          )}
+
+          {!generating && pack && scoringState === "complete" && (
+            <ScoringResultsPanel
+              pack={pack}
+              candidateName={cvAnalysisData?.candidateName ?? ""}
+              scores={scores}
+              elapsedSeconds={elapsedSeconds}
+              onBack={handleBackToKit}
+            />
+          )}
+        </div>
       </div>
-    </div>
+    </AppShell>
   );
 }
