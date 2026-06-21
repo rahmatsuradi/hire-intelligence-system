@@ -77,8 +77,13 @@ export default function AnalyticsPage() {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    setCandidates(getCandidates());
-    setLoaded(true);
+    const refresh = () => {
+      setCandidates(getCandidates());
+      setLoaded(true);
+    };
+    refresh();
+    document.addEventListener("visibilitychange", refresh);
+    return () => document.removeEventListener("visibilitychange", refresh);
   }, []);
 
   const stats = useMemo(() => {

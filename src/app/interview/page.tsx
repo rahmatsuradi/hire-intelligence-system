@@ -956,10 +956,21 @@ export default function InterviewPage() {
     const params = new URLSearchParams(window.location.search);
     const pos = params.get("position");
     if (pos) setPosition(decodeURIComponent(pos));
-    // name param is passed via cvAnalysisData from sessionStorage
     try {
       const stored = sessionStorage.getItem("interview_prefill");
       if (stored) setCvAnalysisData(JSON.parse(stored));
+    } catch { /* ignore */ }
+    try {
+      const saved = sessionStorage.getItem("interview_session");
+      if (saved) {
+        const s = JSON.parse(saved);
+        if (s.pack) setPack(s.pack);
+        if (s.scores) setScores(s.scores);
+        if (s.elapsed) setElapsedSeconds(s.elapsed);
+        if (s.state === "scoring" || s.state === "complete") setScoringState(s.state);
+        if (s.position) setPosition(s.position);
+        if (s.seniority) setSeniority(s.seniority);
+      }
     } catch { /* ignore */ }
   }, []);
 
@@ -968,6 +979,15 @@ export default function InterviewPage() {
     const id = setInterval(() => setElapsedSeconds((s) => s + 1), 1000);
     return () => clearInterval(id);
   }, [scoringState]);
+
+  useEffect(() => {
+    if (scoringState === "idle" && !pack) return;
+    try {
+      sessionStorage.setItem("interview_session", JSON.stringify({
+        pack, scores, elapsed: elapsedSeconds, state: scoringState, position, seniority,
+      }));
+    } catch { /* quota */ }
+  }, [pack, scores, elapsedSeconds, scoringState, position, seniority]);
 
   const handleStartInterview = useCallback(() => {
     if (!pack) return;
@@ -1014,6 +1034,7 @@ export default function InterviewPage() {
 
   const handleBackToKit = useCallback(() => {
     setScoringState("idle");
+    sessionStorage.removeItem("interview_session");
   }, []);
 
   const toggleType = (type: InterviewType) => {

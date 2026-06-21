@@ -44,6 +44,7 @@ interface Candidate {
   competency: string;
   status: CandidateStatus;
   updated: string;
+  updatedRaw: string;
   interviewer: string;
 }
 
@@ -150,7 +151,7 @@ const CANDIDATES: Candidate[] = [
     score: 92,
     competency: "Leadership",
     status: "Strong",
-    updated: "2h ago",
+    updated: "2h ago", updatedRaw: "2026-05-21T14:00:00Z",
     interviewer: "M. Torres",
   },
   {
@@ -163,7 +164,7 @@ const CANDIDATES: Candidate[] = [
     score: 88,
     competency: "Architecture",
     status: "Strong",
-    updated: "5h ago",
+    updated: "5h ago", updatedRaw: "2026-05-21T11:00:00Z",
     interviewer: "J. Patel",
   },
   {
@@ -176,7 +177,7 @@ const CANDIDATES: Candidate[] = [
     score: 85,
     competency: "Analytics",
     status: "Strong",
-    updated: "1d ago",
+    updated: "1d ago", updatedRaw: "2026-05-20T10:00:00Z",
     interviewer: "A. Brooks",
   },
   {
@@ -189,7 +190,7 @@ const CANDIDATES: Candidate[] = [
     score: 79,
     competency: "Strategy",
     status: "Review",
-    updated: "1d ago",
+    updated: "1d ago", updatedRaw: "2026-05-20T08:00:00Z",
     interviewer: "CEO Office",
   },
   {
@@ -202,7 +203,7 @@ const CANDIDATES: Candidate[] = [
     score: 74,
     competency: "Design",
     status: "Review",
-    updated: "2d ago",
+    updated: "2d ago", updatedRaw: "2026-05-19T10:00:00Z",
     interviewer: "L. Nguyen",
   },
   {
@@ -215,7 +216,7 @@ const CANDIDATES: Candidate[] = [
     score: 68,
     competency: "Security",
     status: "Hold",
-    updated: "3d ago",
+    updated: "3d ago", updatedRaw: "2026-05-18T10:00:00Z",
     interviewer: "R. Singh",
   },
   {
@@ -228,7 +229,7 @@ const CANDIDATES: Candidate[] = [
     score: 91,
     competency: "Finance",
     status: "Strong",
-    updated: "4h ago",
+    updated: "4h ago", updatedRaw: "2026-05-21T12:00:00Z",
     interviewer: "CFO Office",
   },
   {
@@ -241,7 +242,7 @@ const CANDIDATES: Candidate[] = [
     score: 71,
     competency: "Sales",
     status: "Review",
-    updated: "2d ago",
+    updated: "2d ago", updatedRaw: "2026-05-19T08:00:00Z",
     interviewer: "S. Walsh",
   },
 ];
@@ -778,7 +779,7 @@ function CandidateTable({
       let cmp = 0;
       if (sortKey === "name") cmp = a.name.localeCompare(b.name);
       else if (sortKey === "score") cmp = a.score - b.score;
-      else cmp = a.updated.localeCompare(b.updated);
+      else cmp = a.updatedRaw.localeCompare(b.updatedRaw);
       return sortDir === "asc" ? cmp : -cmp;
     });
     return list;
@@ -1127,15 +1128,30 @@ function HiringTrendSection() {
   );
 }
 
-function UpcomingInterviews() {
+function UpcomingInterviews({ storeCandidates }: { storeCandidates: CandidateRecord[] }) {
+  const liveInterviews = useMemo((): Interview[] => {
+    const pending = storeCandidates.filter(
+      (c) => c.stage === "screened" || c.stage === "interviewed",
+    );
+    if (pending.length === 0) return INTERVIEWS;
+    return pending.slice(0, 4).map((c, i) => ({
+      id: c.id,
+      candidate: c.name,
+      role: c.position,
+      time: c.stage === "screened" ? `Pending scheduling` : `Completed ${timeAgoShort(c.interviewResults[0]?.completedAt ?? c.updatedAt)}`,
+      type: c.stage === "screened" ? "To be scheduled" : "Structured Interview",
+      interviewer: c.department,
+    }));
+  }, [storeCandidates]);
+
   return (
     <Card padding={false}>
       <CardHeader
         title="Upcoming Interviews"
-        description="Next 48 hours"
+        description={storeCandidates.length > 0 ? "From your pipeline" : "Next 48 hours"}
         action={
-          <Button variant="ghost" size="sm">
-            View calendar
+          <Button variant="ghost" size="sm" onClick={() => window.location.href = "/interview"}>
+            Go to workspace
             <Icon className="h-4 w-4">
               <SvgPath name="arrowRight" />
             </Icon>
@@ -1143,7 +1159,7 @@ function UpcomingInterviews() {
         }
       />
       <ul className="divide-y divide-slate-200 dark:divide-slate-800">
-        {INTERVIEWS.map((iv) => (
+        {liveInterviews.map((iv) => (
           <li key={iv.id} className="flex gap-4 px-5 py-4">
             <div className="flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
               <Icon className="h-4 w-4 text-blue-600 dark:text-blue-400">
@@ -1308,8 +1324,13 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    refreshStore();
-    setDemoLoaded(hasDemoData());
+    const refresh = () => {
+      refreshStore();
+      setDemoLoaded(hasDemoData());
+    };
+    refresh();
+    document.addEventListener("visibilitychange", refresh);
+    return () => document.removeEventListener("visibilitychange", refresh);
   }, [refreshStore]);
 
   const handleLoadDemo = useCallback(() => {
@@ -1347,7 +1368,7 @@ export default function Home() {
         id: c.id, name: c.name, email: c.email, role: c.position,
         department: c.department, stage: STORE_STAGE_LABELS[c.stage],
         score, competency: c.cvAnalysis?.frameworkLabel ?? "—",
-        status, updated: timeAgoShort(c.updatedAt), interviewer: "—",
+        status, updated: timeAgoShort(c.updatedAt), updatedRaw: c.updatedAt, interviewer: "—",
       };
     });
   }, [liveStoreCandidates]);
@@ -1481,7 +1502,7 @@ export default function Home() {
 
       {/* Row: interviews, activity, roles */}
       <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-        <UpcomingInterviews />
+        <UpcomingInterviews storeCandidates={liveStoreCandidates} />
         <ActivityFeed data={liveActivities} />
         <OpenRolesPanel />
       </div>
