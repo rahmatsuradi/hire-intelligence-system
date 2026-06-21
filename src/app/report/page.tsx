@@ -10,8 +10,9 @@ import {
   buildReportCompetencyRows,
   CITATIONS,
 } from "@/lib/competency-framework";
-import { getCandidates } from "@/lib/store";
-import { useEffect, useMemo, useState } from "react";
+import { getCandidates, moveCandidateStage } from "@/lib/store";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Types & mock data
@@ -544,39 +545,111 @@ function PanelDecision({ report }: { report: HiringReport }) {
 }
 
 function ActionBar({ report }: { report: HiringReport }) {
-  const isPositive =
-    report.recommendation === "Strong Hire" || report.recommendation === "Hire";
+  const router = useRouter();
+  const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const isPositive = report.recommendation === "Strong Hire" || report.recommendation === "Hire";
   const isReject = report.recommendation === "Reject";
+  const isSample = ["C-1042", "C-1038", "C-1039"].includes(report.candidateId);
+
+  const notify = useCallback((msg: string) => {
+    setActionMsg(msg);
+    setTimeout(() => setActionMsg(null), 3500);
+  }, []);
+
+  const handleApprove = useCallback(() => {
+    if (isSample) { notify("Sample report — switch to a real candidate to record decisions."); return; }
+    moveCandidateStage(report.candidateId, "offered");
+    notify(`${report.name} moved to Offered ✓`);
+  }, [isSample, report.candidateId, report.name, notify]);
+
+  const handleDecline = useCallback(() => {
+    if (isSample) { notify("Sample report — switch to a real candidate to record decisions."); return; }
+    if (!window.confirm(`Decline ${report.name}? This will mark them as Rejected.`)) return;
+    moveCandidateStage(report.candidateId, "rejected");
+    notify(`${report.name} marked as Rejected`);
+  }, [isSample, report.candidateId, report.name, notify]);
+
+  const handleSchedule = useCallback(() => {
+    sessionStorage.setItem("interview_prefill", JSON.stringify({
+      candidateName: report.name,
+      position: report.position,
+      department: report.department,
+      overallScore: report.cvScore,
+      matchScore: report.cvScore,
+      recommendation: report.recommendation,
+      questions: [],
+      reportId: report.id,
+    }));
+    router.push("/interview");
+  }, [report, router]);
+
+  const handleExport = useCallback(() => {
+    const win = window.open("", "_blank");
+    if (!win) { alert("Allow popups to export PDF."); return; }
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>Hiring Report — ${report.name}</title>
+<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Segoe UI',system-ui,sans-serif;font-size:11pt;color:#0f172a;padding:24px}
+h1{font-size:16pt}h2{font-size:13pt;margin:16px 0 8px}h3{font-size:11pt;margin:12px 0 6px}
+table{width:100%;border-collapse:collapse;font-size:9.5pt}
+th{background:#f1f5f9;padding:7px 10px;text-align:left;font-size:8pt;text-transform:uppercase;letter-spacing:.04em;color:#64748b}
+td{padding:7px 10px;border-bottom:1px solid #f1f5f9}
+.badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:9pt;font-weight:600}
+@media print{button{display:none}}</style></head><body>
+<div style="display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:14px;border-bottom:2px solid #2563eb;margin-bottom:18px">
+  <div><h1>Hire Intelligence</h1><p style="color:#64748b;font-size:9pt">Hiring Decision Report</p></div>
+  <div style="text-align:right"><p style="font-family:monospace;font-size:9pt;color:#64748b">${report.id}</p><p style="font-size:9pt;color:#64748b">${report.reportDate}</p></div>
+</div>
+<h2>${report.name}</h2>
+<p style="color:#475569;margin-bottom:12px">${report.position} · ${report.department}</p>
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:18px">
+  <div style="text-align:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px"><p style="font-size:20pt;font-weight:700">${report.cvScore}</p><p style="font-size:8pt;color:#64748b">CV Score</p></div>
+  <div style="text-align:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px"><p style="font-size:20pt;font-weight:700">${report.interviewScore}</p><p style="font-size:8pt;color:#64748b">Interview</p></div>
+  <div style="text-align:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px"><p style="font-size:20pt;font-weight:700">${report.finalScore}</p><p style="font-size:8pt;color:#64748b">Final Score</p></div>
+  <div style="text-align:center;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px"><p style="font-size:20pt;font-weight:700">${report.confidence}%</p><p style="font-size:8pt;color:#64748b">Confidence</p></div>
+</div>
+<p style="font-weight:600;margin-bottom:4px">Recommendation: ${report.recommendation}</p>
+<p style="color:#475569;font-size:10pt;margin-bottom:14px">${report.consensusNote}</p>
+${report.strengths.length > 0 ? `<h3>Strengths</h3><ul style="padding-left:16px;margin-bottom:14px">${report.strengths.map(s => `<li style="margin-bottom:6px"><strong>${s.title}</strong><br><em>${s.quote}</em> <span style="color:#94a3b8;font-size:9pt">— ${s.source}</span></li>`).join("")}</ul>` : ""}
+${report.panel.length > 0 ? `<h3>Panel</h3><table><tr><th>Name</th><th>Role</th><th>Score</th><th>Recommendation</th></tr>${report.panel.map(p => `<tr><td>${p.name}</td><td>${p.role}</td><td>${p.score}</td><td>${p.recommendation}</td></tr>`).join("")}</table>` : ""}
+<button onclick="window.print()" style="margin-top:20px;padding:8px 18px;background:#2563eb;color:white;border:none;border-radius:6px;cursor:pointer;font-size:10pt">Print / Save as PDF</button>
+</body></html>`);
+    win.document.close();
+  }, [report]);
 
   return (
     <Card className="bg-gradient-to-br from-slate-50 to-blue-50/30 dark:from-slate-900 dark:to-blue-500/5">
+      {actionMsg && (
+        <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+          {actionMsg}
+        </div>
+      )}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p className="font-semibold text-slate-900 dark:text-white">Decision actions</p>
           <p className="mt-0.5 text-sm text-slate-500">
-            Record final outcome for {report.name}
+            Record final outcome for {report.name}{isSample ? " (sample)" : ""}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="primary" size="lg" disabled={!isPositive}>
+          <Button variant="primary" size="lg" disabled={!isPositive} onClick={handleApprove}>
             <Icon className="h-5 w-5">
               <SvgPath name="envelope" />
             </Icon>
             Approve &amp; Send Offer
           </Button>
-          <Button variant="secondary" size="lg" disabled={isReject}>
+          <Button variant="secondary" size="lg" disabled={isReject} onClick={handleSchedule}>
             <Icon className="h-5 w-5">
               <SvgPath name="calendarDays" />
             </Icon>
             Schedule Next Round
           </Button>
-          <Button variant="danger" size="lg">
+          <Button variant="danger" size="lg" onClick={handleDecline}>
             <Icon className="h-5 w-5">
               <SvgPath name="xmark" />
             </Icon>
             Decline Candidate
           </Button>
-          <Button variant="secondary" size="lg">
+          <Button variant="secondary" size="lg" onClick={handleExport}>
             <Icon className="h-5 w-5">
               <SvgPath name="download" />
             </Icon>

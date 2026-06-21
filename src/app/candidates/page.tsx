@@ -243,7 +243,7 @@ function DetailPanel({
                 <p className="text-[10px] text-slate-500">Match</p>
               </div>
               <div>
-                <p className="text-lg font-bold text-slate-900 dark:text-white">{Math.round(candidate.cvAnalysis.confidence * 100)}%</p>
+                <p className="text-lg font-bold text-slate-900 dark:text-white">{Math.round(candidate.cvAnalysis.confidence)}%</p>
                 <p className="text-[10px] text-slate-500">Confidence</p>
               </div>
             </div>

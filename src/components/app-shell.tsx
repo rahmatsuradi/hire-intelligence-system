@@ -12,6 +12,7 @@ interface NavItem {
   href: string;
   badge?: number;
   section: "main" | "tools";
+  soon?: boolean;
 }
 
 export function cn(...classes: (string | false | undefined)[]) {
@@ -133,7 +134,10 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [theme, setTheme] = useState<Theme>("system");
+  const [theme, setTheme] = useState<Theme>(() => {
+    if (typeof window === "undefined") return "system";
+    return (localStorage.getItem("hi_theme") as Theme) ?? "system";
+  });
   const [isDark, setIsDark] = useState(false);
 
   useEffect(() => {
@@ -150,15 +154,36 @@ export function AppShell({
   }, [theme]);
 
   const cycleTheme = useCallback(() => {
-    setTheme((t) => (t === "light" ? "dark" : t === "dark" ? "system" : "light"));
+    setTheme((t) => {
+      const next: Theme = t === "light" ? "dark" : t === "dark" ? "system" : "light";
+      localStorage.setItem("hi_theme", next);
+      return next;
+    });
   }, []);
+
+  const [userName, setUserNameState] = useState(() => {
+    if (typeof window === "undefined") return "You";
+    return localStorage.getItem("hi_user_name") ?? "You";
+  });
+  const userInitials = userName.split(" ").slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("") || "Y";
+
+  const handleEditName = useCallback(() => {
+    const next = window.prompt("Your name:", userName);
+    if (next && next.trim()) {
+      localStorage.setItem("hi_user_name", next.trim());
+      setUserNameState(next.trim());
+    }
+  }, [userName]);
 
   const [badges, setBadges] = useState({ candidates: 0, roles: 0 });
   useEffect(() => {
-    setBadges({
+    const refresh = () => setBadges({
       candidates: getCandidates().length,
       roles: getJobReqs().filter((r) => r.status === "active").length,
     });
+    refresh();
+    document.addEventListener("visibilitychange", refresh);
+    return () => document.removeEventListener("visibilitychange", refresh);
   }, []);
 
   const navItems: NavItem[] = useMemo(() => [
@@ -167,12 +192,12 @@ export function AppShell({
     { id: "roles", label: "Open Roles", href: "/roles", badge: badges.roles || undefined, section: "main" },
     { id: "interviews", label: "Interviews", href: "/interview", section: "main" },
     { id: "analytics", label: "Analytics", href: "/analytics", section: "main" },
-    { id: "reports", label: "Reports", href: "/", section: "main" },
+    { id: "reports", label: "Reports", href: "/report", section: "main" },
     { id: "cv-analyzer", label: "CV Analyzer", href: "/cv-analyzer", section: "tools" },
     { id: "interview-workspace", label: "Interview Workspace", href: "/interview", section: "tools" },
     { id: "hiring-report", label: "Hiring Report", href: "/report", section: "tools" },
-    { id: "integrations", label: "Integrations", href: "/", section: "tools" },
-    { id: "settings", label: "Settings", href: "/", section: "tools" },
+    { id: "integrations", label: "Integrations", href: "/integrations", section: "tools", soon: true },
+    { id: "settings", label: "Settings", href: "/settings", section: "tools", soon: true },
   ], [badges]);
 
   const mainNav = navItems.filter((n) => n.section === "main");
@@ -190,7 +215,10 @@ export function AppShell({
           aria-current={active ? "page" : undefined}>
           <Icon className="h-5 w-5 shrink-0"><SvgPath name={iconKey} /></Icon>
           <span className="truncate">{item.label}</span>
-          {item.badge !== undefined && (
+          {item.soon && (
+            <span className="ml-auto rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-400 dark:bg-slate-800 dark:text-slate-500">Soon</span>
+          )}
+          {item.badge !== undefined && !item.soon && (
             <span className={cn("ml-auto rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums",
               active ? "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-300"
                 : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400")}>
@@ -247,10 +275,12 @@ export function AppShell({
             </button>
             <div className="hidden h-8 w-px bg-slate-200 md:block dark:bg-slate-700" />
             <div className="flex items-center gap-2 rounded-lg py-1 pl-1 pr-2 md:pr-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-xs font-semibold text-white">AK</div>
+              <button type="button" onClick={handleEditName} title="Click to change name" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-xs font-semibold text-white hover:opacity-90">
+                {userInitials}
+              </button>
               <div className="hidden text-left lg:block">
-                <p className="text-sm font-medium text-slate-900 dark:text-white">Alex Kim</p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Talent Lead</p>
+                <p className="text-sm font-medium text-slate-900 dark:text-white">{userName}</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Recruiter</p>
               </div>
             </div>
           </div>
