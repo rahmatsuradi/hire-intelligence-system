@@ -5,10 +5,10 @@ import {
   AppShell, Button, Card, Icon, SvgPath, ICON_PATHS, cn, Label, inputClass,
 } from "@/components/app-shell";
 import {
-  type CandidateRecord, type PipelineStage, type JobRequisition,
+  type CandidateRecord, type PipelineStage, type JobRequisition, type ImportRow,
   PIPELINE_STAGES, STAGE_LABELS,
   getCandidates, getJobReqs, saveCandidate, deleteCandidate,
-  moveCandidateStage, createCandidate,
+  moveCandidateStage, createCandidate, importCandidates,
 } from "@/lib/store";
 import { toast } from "@/components/toast";
 
@@ -459,6 +459,160 @@ function AddCandidateModal({
   );
 }
 
+/* ─── CSV Import ─── */
+
+function splitCsvLine(line: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; }
+      else inQuotes = !inQuotes;
+    } else if (ch === "," && !inQuotes) {
+      out.push(cur); cur = "";
+    } else cur += ch;
+  }
+  out.push(cur);
+  return out.map((s) => s.trim());
+}
+
+function parseCsv(text: string): ImportRow[] {
+  const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "");
+  if (lines.length === 0) return [];
+  const header = splitCsvLine(lines[0]).map((h) => h.toLowerCase());
+  const idx = (names: string[]) => header.findIndex((h) => names.includes(h));
+  const iName = idx(["name", "nama", "full name", "candidate"]);
+  const iEmail = idx(["email", "e-mail"]);
+  const iPhone = idx(["phone", "telepon", "hp", "telp", "mobile"]);
+  const iPos = idx(["position", "posisi", "role", "job", "jabatan"]);
+  const iDept = idx(["department", "departemen", "dept", "divisi"]);
+  const iSrc = idx(["source", "sumber"]);
+  const hasHeader = iName !== -1 || iPos !== -1;
+  const dataLines = hasHeader ? lines.slice(1) : lines;
+  const get = (cols: string[], i: number) => (i >= 0 && i < cols.length ? cols[i] : "");
+  return dataLines.map((line) => {
+    const cols = splitCsvLine(line);
+    if (hasHeader) {
+      return {
+        name: get(cols, iName), email: get(cols, iEmail), phone: get(cols, iPhone),
+        position: get(cols, iPos), department: get(cols, iDept), source: get(cols, iSrc),
+      };
+    }
+    return { name: cols[0] ?? "", email: cols[1] ?? "", phone: cols[2] ?? "", position: cols[3] ?? "", department: cols[4] ?? "", source: cols[5] ?? "" };
+  });
+}
+
+const CSV_TEMPLATE = "name,email,phone,position,department,source\nJohn Doe,john@example.com,+62812000111,Software Engineer,Engineering,LinkedIn\nJane Smith,jane@example.com,+62813000222,Product Manager,Product,Referral";
+
+function triggerDownload(content: string, filename: string) {
+  const blob = new Blob([content], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function ImportCsvModal({ onClose, onImported }: { onClose: () => void; onImported: (n: number) => void }) {
+  const [raw, setRaw] = useState("");
+  const rows = useMemo(() => parseCsv(raw), [raw]);
+  const valid = useMemo(() => rows.filter((r) => r.name?.trim() && r.position?.trim()), [rows]);
+  const invalid = rows.length - valid.length;
+
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => setRaw(String(reader.result ?? ""));
+    reader.readAsText(f);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/60 py-10 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Import Candidates from CSV</h2>
+            <p className="mt-0.5 text-sm text-slate-500">Upload a .csv file or paste rows below. Columns: name, email, phone, position, department, source.</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
+            <Icon className="h-5 w-5"><SvgPath name="close" /></Icon>
+          </button>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800">
+            <Icon className="h-4 w-4"><SvgPath name="upload" /></Icon>
+            Choose .csv file
+            <input type="file" accept=".csv,text/csv" onChange={handleFile} className="hidden" />
+          </label>
+          <button type="button" onClick={() => triggerDownload(CSV_TEMPLATE, "candidates-template.csv")} className="text-sm text-blue-600 hover:underline dark:text-blue-400">
+            Download template
+          </button>
+        </div>
+
+        <div className="mt-3">
+          <Label htmlFor="csv-paste">Or paste CSV</Label>
+          <textarea
+            id="csv-paste"
+            value={raw}
+            onChange={(e) => setRaw(e.target.value)}
+            placeholder={CSV_TEMPLATE}
+            className={cn(inputClass, "min-h-[120px] font-mono text-xs")}
+          />
+        </div>
+
+        {rows.length > 0 && (
+          <div className="mt-4 rounded-lg border border-slate-200 dark:border-slate-800">
+            <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2 text-xs dark:border-slate-800">
+              <span className="font-medium text-slate-700 dark:text-slate-300">Preview</span>
+              <span className="text-slate-500">
+                {valid.length} valid{invalid > 0 ? ` · ${invalid} skipped (missing name/position)` : ""}
+              </span>
+            </div>
+            <div className="max-h-48 overflow-y-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800/80">
+                  <tr className="text-slate-500">
+                    <th className="px-3 py-1.5 font-medium">Name</th>
+                    <th className="px-3 py-1.5 font-medium">Position</th>
+                    <th className="px-3 py-1.5 font-medium">Department</th>
+                    <th className="px-3 py-1.5 font-medium">Email</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {rows.slice(0, 50).map((r, i) => {
+                    const ok = r.name?.trim() && r.position?.trim();
+                    return (
+                      <tr key={i} className={cn(!ok && "opacity-40")}>
+                        <td className="px-3 py-1.5 text-slate-700 dark:text-slate-300">{r.name || <span className="text-red-500">—</span>}</td>
+                        <td className="px-3 py-1.5 text-slate-700 dark:text-slate-300">{r.position || <span className="text-red-500">—</span>}</td>
+                        <td className="px-3 py-1.5 text-slate-500">{r.department || "—"}</td>
+                        <td className="px-3 py-1.5 text-slate-500">{r.email || "—"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        <div className="mt-6 flex justify-end gap-2">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button variant="primary" onClick={() => onImported(importCandidates(valid))} disabled={valid.length === 0}>
+            <Icon className="h-4 w-4"><SvgPath name="plus" /></Icon>
+            Import {valid.length > 0 ? valid.length : ""} candidate{valid.length === 1 ? "" : "s"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Main Page ─── */
 
 export default function CandidatesPage() {
@@ -470,6 +624,7 @@ export default function CandidatesPage() {
   const [filterDept, setFilterDept] = useState("");
   const [showRejected, setShowRejected] = useState(false);
   const [viewMode, setViewMode] = useState<"kanban" | "table">("kanban");
+  const [showImport, setShowImport] = useState(false);
 
   const reload = useCallback(() => {
     setAllCandidates(getCandidates());
@@ -522,6 +677,27 @@ export default function CandidatesPage() {
     toast(`${name} deleted`, "info");
   }, [reload, selected]);
 
+  const handleImported = useCallback((n: number) => {
+    setShowImport(false);
+    reload();
+    toast(n > 0 ? `Imported ${n} candidate${n === 1 ? "" : "s"}` : "No valid rows to import", n > 0 ? "success" : "error");
+  }, [reload]);
+
+  const handleExportCsv = useCallback(() => {
+    if (allCandidates.length === 0) { toast("No candidates to export", "error"); return; }
+    const esc = (v: string | number) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const header = ["name", "email", "phone", "position", "department", "source", "stage", "cvScore", "recommendation"];
+    const lines = [header.join(",")];
+    for (const c of allCandidates) {
+      lines.push([
+        c.name, c.email, c.phone, c.position, c.department, c.source,
+        STAGE_LABELS[c.stage], c.cvAnalysis?.overallScore ?? "", c.cvAnalysis?.recommendation ?? "",
+      ].map(esc).join(","));
+    }
+    triggerDownload(lines.join("\n"), `candidates-${new Date().toISOString().slice(0, 10)}.csv`);
+    toast(`Exported ${allCandidates.length} candidates to CSV`);
+  }, [allCandidates]);
+
   const totalActive = allCandidates.filter((c) => c.stage !== "hired" && c.stage !== "rejected").length;
 
   const stagesToShow: PipelineStage[] = showRejected ? [...PIPELINE_STAGES, "rejected"] : PIPELINE_STAGES;
@@ -529,10 +705,20 @@ export default function CandidatesPage() {
   return (
     <AppShell activeNavId="candidates" title="Candidates" subtitle={`${allCandidates.length} total · ${totalActive} active in pipeline`}
       headerActions={
-        <Button variant="primary" onClick={() => setShowAdd(true)}>
-          <Icon className="h-4 w-4"><SvgPath name="plus" /></Icon>
-          <span className="hidden sm:inline">Add Candidate</span>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" onClick={() => setShowImport(true)}>
+            <Icon className="h-4 w-4"><SvgPath name="upload" /></Icon>
+            <span className="hidden sm:inline">Import</span>
+          </Button>
+          <Button variant="secondary" onClick={handleExportCsv}>
+            <Icon className="h-4 w-4"><SvgPath name="download" /></Icon>
+            <span className="hidden sm:inline">Export</span>
+          </Button>
+          <Button variant="primary" onClick={() => setShowAdd(true)}>
+            <Icon className="h-4 w-4"><SvgPath name="plus" /></Icon>
+            <span className="hidden sm:inline">Add Candidate</span>
+          </Button>
+        </div>
       }>
 
       {/* Toolbar */}
@@ -650,6 +836,11 @@ export default function CandidatesPage() {
           onClose={() => setShowAdd(false)}
           onAdd={(c) => { setShowAdd(false); reload(); setSelected(c); }}
         />
+      )}
+
+      {/* Import Modal */}
+      {showImport && (
+        <ImportCsvModal onClose={() => setShowImport(false)} onImported={handleImported} />
       )}
     </AppShell>
   );

@@ -181,6 +181,54 @@ export function createCandidate(data: {
   return candidate;
 }
 
+export interface ImportRow {
+  name: string;
+  email?: string;
+  phone?: string;
+  position: string;
+  department?: string;
+  source?: string;
+}
+
+/** Bulk-create candidates from parsed rows. Skips rows missing name or position.
+ *  Writes once and logs a single summary activity. Returns count added. */
+export function importCandidates(rows: ImportRow[]): number {
+  const all = getCandidates();
+  const now = new Date().toISOString();
+  let added = 0;
+  for (const r of rows) {
+    const name = r.name?.trim();
+    const position = r.position?.trim();
+    if (!name || !position) continue;
+    all.unshift({
+      id: generateId("C"),
+      name,
+      email: r.email?.trim() ?? "",
+      phone: r.phone?.trim() ?? "",
+      stage: "applied",
+      jobReqId: "",
+      department: r.department?.trim() ?? "",
+      position,
+      source: r.source?.trim() || "CSV Import",
+      notes: "",
+      cvAnalysis: null,
+      interviewResults: [],
+      createdAt: now,
+      updatedAt: now,
+    });
+    added++;
+  }
+  if (added > 0) {
+    writeJson(CANDIDATES_KEY, all);
+    addActivity({
+      action: "Imported candidates:",
+      target: `${added} candidate${added === 1 ? "" : "s"} via CSV`,
+      type: "create",
+    });
+  }
+  return added;
+}
+
 export function findCandidateByName(name: string, position: string): CandidateRecord | null {
   const n = name.toLowerCase().trim();
   const p = position.toLowerCase().trim();
