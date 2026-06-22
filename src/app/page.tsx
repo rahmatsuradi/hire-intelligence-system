@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell, Icon, SvgPath, Card, Button, cn } from "@/components/app-shell";
+import { toast } from "@/components/toast";
 import {
   getCandidates as getStoreCandidates,
   getDashboardStats,
@@ -845,7 +846,7 @@ function CandidateTable({
         }
       />
 
-      <div className="overflow-x-auto">
+      <div className="relative overflow-x-auto">
         <table className="w-full min-w-[800px] text-left text-sm">
           <caption className="sr-only">
             Candidate evaluation scores and pipeline status
@@ -1339,6 +1340,7 @@ export default function Home() {
     refreshStore();
     setDemoLoaded(true);
     setDemoLoading(false);
+    toast("Demo data loaded — 10 candidates, 4 roles");
   }, [refreshStore]);
 
   const handleClearDemo = useCallback(() => {
@@ -1346,6 +1348,7 @@ export default function Home() {
       clearDemoData();
       refreshStore();
       setDemoLoaded(false);
+      toast("Demo data cleared", "info");
     });
   }, [refreshStore]);
 
@@ -1475,7 +1478,7 @@ export default function Home() {
 
       {/* Row: trend + departments */}
       <div className="grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2">
+        <div className="min-w-0 lg:col-span-2">
           <HiringTrendSection />
         </div>
         <DepartmentProgress />
@@ -1483,7 +1486,7 @@ export default function Home() {
 
       {/* Row: table + right rail */}
       <div className="grid gap-6 xl:grid-cols-3">
-        <div className="xl:col-span-2">
+        <div className="min-w-0 xl:col-span-2">
           <CandidateTable
             candidates={liveCandidateTable}
             searchQuery={searchQuery}

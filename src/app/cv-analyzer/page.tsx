@@ -15,6 +15,7 @@ import {
   findCandidateByName, createCandidate, saveCvAnalysis,
   type CvAnalysisSnapshot,
 } from "@/lib/store";
+import { toast } from "@/components/toast";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Recommendation = "Strong Hire" | "Hire" | "Review" | "Reject";
@@ -636,8 +637,11 @@ export default function CvAnalyzerPage() {
         };
         saveCvAnalysis(candidate.id, snapshot);
       } catch { /* store write failed, non-critical */ }
+      toast(`Analysis complete — ${newReport.recommendation} (${newReport.overallScore} pts)`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      setError(msg);
+      toast(msg, "error");
     } finally {
       setAnalyzing(false);
     }

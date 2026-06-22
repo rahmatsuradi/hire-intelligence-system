@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getCandidates, getJobReqs } from "@/lib/store";
+import { Toaster } from "@/components/toast";
+import { ErrorBoundary } from "@/components/error-boundary";
 
 type Theme = "light" | "dark" | "system";
 
@@ -301,7 +303,7 @@ export function AppShell({
               <h1 className="text-xl font-semibold text-slate-900 dark:text-white">{title}</h1>
               {subtitle && <p className="text-sm text-slate-500">{subtitle}</p>}
             </div>
-            {children}
+            <ErrorBoundary>{children}</ErrorBoundary>
           </div>
 
           <footer className="border-t border-slate-200 px-6 py-4 dark:border-slate-800">
@@ -312,6 +314,7 @@ export function AppShell({
           </footer>
         </main>
       </div>
+      <Toaster />
     </div>
   );
 }

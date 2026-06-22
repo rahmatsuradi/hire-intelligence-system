@@ -10,6 +10,7 @@ import {
   getJobReqs, saveJobReq, deleteJobReq, createJobReq,
   getCandidatesForReq, getCandidates,
 } from "@/lib/store";
+import { toast } from "@/components/toast";
 
 /* ─── Status colors ─── */
 
@@ -60,6 +61,14 @@ function ReqForm({
 }) {
   const [form, setForm] = useState(initial);
   const set = (k: string, v: string | number) => setForm((f) => ({ ...f, [k]: v }));
+
+  const errors: string[] = [];
+  if (!form.title.trim()) errors.push("Job title is required.");
+  if (!form.department.trim()) errors.push("Department is required.");
+  if (form.salaryMin > 0 && form.salaryMax > 0 && form.salaryMax < form.salaryMin)
+    errors.push("Salary max must be greater than or equal to salary min.");
+  if (form.headcount < 1) errors.push("Headcount must be at least 1.");
+  const isValid = errors.length === 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/60 py-10 backdrop-blur-sm" onClick={onCancel}>
@@ -132,9 +141,16 @@ function ReqForm({
             <textarea id="req-reqs" className={cn(inputClass, "min-h-[80px]")} placeholder="Key requirements, one per line..." value={form.requirements} onChange={(e) => set("requirements", e.target.value)} />
           </div>
         </div>
+        {!isValid && (form.title || form.department || form.salaryMax > 0) && (
+          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-500/30 dark:bg-amber-500/10">
+            <ul className="space-y-0.5 text-xs text-amber-700 dark:text-amber-400">
+              {errors.map((e) => <li key={e}>• {e}</li>)}
+            </ul>
+          </div>
+        )}
         <div className="mt-6 flex justify-end gap-2">
           <Button onClick={onCancel}>Cancel</Button>
-          <Button variant="primary" onClick={() => onSave(form)} disabled={!form.title.trim() || !form.department.trim()}>
+          <Button variant="primary" onClick={() => onSave(form)} disabled={!isValid}>
             <Icon className="h-4 w-4"><SvgPath name="check" /></Icon> Save
           </Button>
         </div>
@@ -315,6 +331,7 @@ export default function RolesPage() {
     createJobReq(data);
     setShowForm(null);
     reload();
+    toast(`Requisition "${data.title}" created`);
   };
 
   const handleSaveEdit = (data: typeof EMPTY_FORM) => {
@@ -328,6 +345,7 @@ export default function RolesPage() {
     setSelected(updated);
     setShowForm(null);
     reload();
+    toast(`Requisition "${data.title}" updated`);
   };
 
   const handleStatusChange = (reqId: string, status: ReqStatus) => {
@@ -338,12 +356,15 @@ export default function RolesPage() {
     saveJobReq(req);
     if (selected?.id === reqId) setSelected({ ...req });
     reload();
+    toast(`Status changed to ${status}`, "info");
   };
 
   const handleDeleteReq = (reqId: string) => {
+    const title = allReqs.find((r) => r.id === reqId)?.title ?? "Requisition";
     deleteJobReq(reqId);
     if (selected?.id === reqId) setSelected(null);
     reload();
+    toast(`"${title}" deleted`, "info");
   };
 
   return (

@@ -10,6 +10,7 @@ import {
   getCandidates, getJobReqs, saveCandidate, deleteCandidate,
   moveCandidateStage, createCandidate,
 } from "@/lib/store";
+import { toast } from "@/components/toast";
 
 /* ─── Stage colors ─── */
 
@@ -376,10 +377,14 @@ function AddCandidateModal({
 }) {
   const [form, setForm] = useState({ name: "", email: "", phone: "", position: "", department: "", source: "Manual", jobReqId: "" });
 
+  const emailValid = form.email.trim() === "" || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim());
+  const canSubmit = form.name.trim() !== "" && form.position.trim() !== "" && emailValid;
+
   const handleSubmit = () => {
-    if (!form.name.trim() || !form.position.trim()) return;
+    if (!canSubmit) return;
     const c = createCandidate(form);
     onAdd(c);
+    toast(`${c.name} added to pipeline`);
   };
 
   const handleReqChange = (reqId: string) => {
@@ -416,7 +421,8 @@ function AddCandidateModal({
             </div>
             <div>
               <Label htmlFor="add-email">Email</Label>
-              <input id="add-email" className={inputClass} placeholder="john@example.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+              <input id="add-email" type="email" className={cn(inputClass, !emailValid && "border-red-400 focus:border-red-500 focus:ring-red-500/25")} placeholder="john@example.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+              {!emailValid && <p className="mt-1 text-xs text-red-500">Invalid email format</p>}
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -444,7 +450,7 @@ function AddCandidateModal({
         </div>
         <div className="mt-6 flex justify-end gap-2">
           <Button onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={handleSubmit} disabled={!form.name.trim() || !form.position.trim()}>
+          <Button variant="primary" onClick={handleSubmit} disabled={!canSubmit}>
             <Icon className="h-4 w-4"><SvgPath name="plus" /></Icon> Add Candidate
           </Button>
         </div>
@@ -471,6 +477,12 @@ export default function CandidatesPage() {
   }, []);
 
   useEffect(reload, [reload]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const dept = params.get("dept");
+    if (dept) setFilterDept(dept);
+  }, []);
 
   const departments = useMemo(() => {
     const s = new Set(allCandidates.map((c) => c.department).filter(Boolean));
@@ -499,12 +511,15 @@ export default function CandidatesPage() {
     moveCandidateStage(id, stage);
     reload();
     if (selected?.id === id) setSelected(getCandidates().find((c) => c.id === id) ?? null);
+    toast(`Moved to ${STAGE_LABELS[stage]}`, "info");
   }, [reload, selected]);
 
   const handleDelete = useCallback((id: string) => {
+    const name = getCandidates().find((c) => c.id === id)?.name ?? "Candidate";
     deleteCandidate(id);
     if (selected?.id === id) setSelected(null);
     reload();
+    toast(`${name} deleted`, "info");
   }, [reload, selected]);
 
   const totalActive = allCandidates.filter((c) => c.stage !== "hired" && c.stage !== "rejected").length;

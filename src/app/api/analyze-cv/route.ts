@@ -61,6 +61,8 @@ async function extractPdfText(buffer: Buffer): Promise<string> {
 
 /* ─── Groq API call (OpenAI-compatible) ─── */
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function callGroq(prompt: string): Promise<string> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey || apiKey.startsWith("gsk_xxx")) {
@@ -69,54 +71,63 @@ async function callGroq(prompt: string): Promise<string> {
 
   console.log(`[analyze-cv] Calling Groq ${GROQ_MODEL}, prompt: ${prompt.length} chars`);
 
-  const response = await fetch(GROQ_API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: GROQ_MODEL,
-      messages: [
-        {
-          role: "system",
-          content: "Kamu adalah HR Intelligence Analyst. Selalu kembalikan respons dalam format JSON valid saja, tanpa teks tambahan, tanpa markdown code block.",
-        },
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
-      temperature: 0.2,
-      max_tokens: 4096,
-      response_format: { type: "json_object" }, // Groq JSON mode
-    }),
+  const body = JSON.stringify({
+    model: GROQ_MODEL,
+    messages: [
+      {
+        role: "system",
+        content: "Kamu adalah HR Intelligence Analyst. Selalu kembalikan respons dalam format JSON valid saja, tanpa teks tambahan, tanpa markdown code block.",
+      },
+      { role: "user", content: prompt },
+    ],
+    temperature: 0.2,
+    max_tokens: 4096,
+    response_format: { type: "json_object" }, // Groq JSON mode
   });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error(`[analyze-cv] Groq ${response.status}:`, errorText.slice(0, 400));
+  const MAX_ATTEMPTS = 3;
+  let lastErr = "";
 
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const response = await fetch(GROQ_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+      body,
+    });
+
+    if (response.ok) {
+      const data = await response.json() as {
+        choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
+        usage?: { prompt_tokens: number; completion_tokens: number };
+      };
+      const text = data.choices?.[0]?.message?.content;
+      if (!text) throw new Error("Groq mengembalikan respons kosong.");
+      console.log("[analyze-cv] Groq OK, tokens:", data.usage?.prompt_tokens, "+", data.usage?.completion_tokens);
+      return text;
+    }
+
+    const errorText = await response.text();
+    console.error(`[analyze-cv] Groq ${response.status} (attempt ${attempt}/${MAX_ATTEMPTS}):`, errorText.slice(0, 400));
+
+    // Non-retryable client errors — fail immediately
     if (response.status === 401) throw new Error("GROQ_API_KEY tidak valid. Periksa key di .env.local");
-    if (response.status === 429) throw new Error("Rate limit Groq. Tunggu sebentar lalu coba lagi.");
     if (response.status === 400) throw new Error(`Request tidak valid: ${errorText.slice(0, 200)}`);
 
+    // Retryable: 429 (rate limit) and 5xx (server) — back off and retry
+    if ((response.status === 429 || response.status >= 500) && attempt < MAX_ATTEMPTS) {
+      const retryAfter = parseFloat(response.headers.get("retry-after") ?? "");
+      const backoff = Number.isFinite(retryAfter) ? retryAfter * 1000 : 2 ** attempt * 500;
+      console.log(`[analyze-cv] Retrying in ${backoff}ms…`);
+      await sleep(backoff);
+      lastErr = `Groq ${response.status}`;
+      continue;
+    }
+
+    if (response.status === 429) throw new Error("Rate limit Groq tercapai. Tunggu sebentar lalu coba lagi.");
     throw new Error(`Groq API error ${response.status}: ${errorText.slice(0, 200)}`);
   }
 
-  const data = await response.json() as {
-    choices?: Array<{
-      message?: { content?: string };
-      finish_reason?: string;
-    }>;
-    usage?: { prompt_tokens: number; completion_tokens: number };
-  };
-
-  const text = data.choices?.[0]?.message?.content;
-  if (!text) throw new Error("Groq mengembalikan respons kosong.");
-
-  console.log("[analyze-cv] Groq OK, tokens:", data.usage?.prompt_tokens, "+", data.usage?.completion_tokens);
-  return text;
+  throw new Error(`Groq gagal setelah ${MAX_ATTEMPTS} percobaan (${lastErr}). Coba lagi nanti.`);
 }
 
 /* ─── Main handler ─── */
