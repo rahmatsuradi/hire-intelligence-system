@@ -22,7 +22,10 @@ const DEPARTMENTS = [
 ];
 
 const MAX_FILES = 200;
-const CONCURRENCY = 2; // keep low to respect Groq free-tier rate limits
+const MAX_TRY = 3;        // client-side retries per CV (handles transient rate limits)
+const PACING_MS = 1200;   // gentle gap between CVs to respect Groq free-tier limits
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 type ItemStatus = "queued" | "processing" | "done" | "error";
 
@@ -138,70 +141,103 @@ export default function BulkCvAnalyzerPage() {
   const errorCount = items.filter((i) => i.status === "error").length;
   const processedCount = doneCount + errorCount;
 
-  const runBulk = useCallback(async () => {
-    if (items.length === 0 || !position.trim() || !department) return;
-    setRunning(true);
-    setItems((prev) => prev.map((i) => ({ ...i, status: "queued", error: undefined })));
+  // Analyze ONE CV with client-side retries. Returns true on success.
+  // Sends noRetry=true so each serverless call is a single fast attempt.
+  const analyzeAndSave = useCallback(async (
+    target: { id: string; file: File; fileName: string },
+    pos: string,
+  ): Promise<boolean> => {
+    for (let attempt = 1; attempt <= MAX_TRY; attempt++) {
+      updateItem(target.id, {
+        status: "processing",
+        error: attempt > 1 ? `Mengulang… (${attempt}/${MAX_TRY})` : undefined,
+      });
+      try {
+        const fd = new FormData();
+        fd.append("file", target.file);
+        fd.append("targetPosition", pos);
+        fd.append("department", department);
+        fd.append("noRetry", "true");
 
-    const list = items.map((i) => ({ id: i.id, file: i.file, fileName: i.fileName }));
-    const pos = position.trim();
-    let idx = 0;
-    let success = 0;
+        const res = await fetch("/api/analyze-cv", { method: "POST", body: fd });
+        const raw = await res.text();
+        let json: { result?: AiAnalysisResult; error?: string } | null = null;
+        try { json = JSON.parse(raw) as { result?: AiAnalysisResult; error?: string }; }
+        catch { /* non-JSON = server overloaded / timed out */ }
 
-    const worker = async () => {
-      while (idx < list.length) {
-        const my = list[idx++];
-        updateItem(my.id, { status: "processing" });
-        try {
-          const fd = new FormData();
-          fd.append("file", my.file);
-          fd.append("targetPosition", pos);
-          fd.append("department", department);
-
-          const res = await fetch("/api/analyze-cv", { method: "POST", body: fd });
-          const json = (await res.json()) as { result?: AiAnalysisResult; error?: string };
-          if (!res.ok || json.error) throw new Error(json.error ?? `Server error ${res.status}`);
-          const result = json.result;
-          if (!result) throw new Error("Respons AI tidak valid");
-
-          const name = (result.candidateName && result.candidateName.trim()) || prettyNameFromFile(my.fileName);
-          const now = new Date();
-          const snapshot: CvAnalysisSnapshot = {
-            reportId: `RPT-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
-            overallScore: result.overallScore,
-            matchScore: result.matchScore,
-            confidence: result.confidence,
-            recommendation: result.recommendation,
-            summary: result.summary,
-            frameworkLabel: result.frameworkLabel ?? "Multi-Framework",
-            analyzedAt: now.toISOString(),
-          };
-          upsertAnalyzedCandidate({
-            name, position: pos, department,
-            jobReqId: jobReqId || undefined, source: "Bulk CV", snapshot,
-          });
-          success++;
-          updateItem(my.id, {
-            status: "done", name,
-            overallScore: result.overallScore, matchScore: result.matchScore,
-            recommendation: result.recommendation, frameworkLabel: result.frameworkLabel,
-          });
-        } catch (err) {
-          updateItem(my.id, { status: "error", error: (err as Error).message });
+        if (!json) {
+          if (attempt < MAX_TRY) { await sleep(attempt * 5000); continue; }
+          throw new Error("Server sibuk (timeout). Coba lagi sebentar.");
         }
-      }
-    };
+        if (!res.ok || json.error) {
+          const msg = json.error ?? `Server error ${res.status}`;
+          const retryable = res.status === 429 || res.status >= 500;
+          if (retryable && attempt < MAX_TRY) { await sleep(attempt * 5000); continue; }
+          throw new Error(msg);
+        }
+        const result = json.result;
+        if (!result) throw new Error("Respons AI tidak valid");
 
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, list.length) }, () => worker()));
+        const name = (result.candidateName && result.candidateName.trim()) || prettyNameFromFile(target.fileName);
+        const now = new Date();
+        const snapshot: CvAnalysisSnapshot = {
+          reportId: `RPT-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
+          overallScore: result.overallScore, matchScore: result.matchScore,
+          confidence: result.confidence, recommendation: result.recommendation,
+          summary: result.summary, frameworkLabel: result.frameworkLabel ?? "Multi-Framework",
+          analyzedAt: now.toISOString(),
+        };
+        upsertAnalyzedCandidate({ name, position: pos, department, jobReqId: jobReqId || undefined, source: "Bulk CV", snapshot });
+        updateItem(target.id, {
+          status: "done", name, error: undefined,
+          overallScore: result.overallScore, matchScore: result.matchScore,
+          recommendation: result.recommendation, frameworkLabel: result.frameworkLabel,
+        });
+        return true;
+      } catch (err) {
+        if (attempt >= MAX_TRY) {
+          updateItem(target.id, { status: "error", error: (err as Error).message });
+          return false;
+        }
+        await sleep(attempt * 3000);
+      }
+    }
+    return false;
+  }, [department, jobReqId, updateItem]);
+
+  // Process a list of CVs sequentially (gentle on the rate limit).
+  const processList = useCallback(async (targets: { id: string; file: File; fileName: string }[]) => {
+    const pos = position.trim();
+    if (targets.length === 0 || !pos || !department) return;
+    setRunning(true);
+    const ids = new Set(targets.map((t) => t.id));
+    setItems((prev) => prev.map((i) => ids.has(i.id)
+      ? { ...i, status: "queued", error: undefined, overallScore: undefined, matchScore: undefined, recommendation: undefined }
+      : i));
+
+    let success = 0;
+    for (const t of targets) {
+      const ok = await analyzeAndSave(t, pos);
+      if (ok) success++;
+      await sleep(PACING_MS);
+    }
 
     logBulkAnalysis(success, pos);
     setRunning(false);
-    const failed = list.length - success;
+    const failed = targets.length - success;
     toast(
-      `Bulk analysis selesai — ${success} berhasil${failed ? `, ${failed} gagal` : ""}`,
+      `Selesai — ${success} berhasil${failed ? `, ${failed} gagal (pakai "Retry failed")` : ""}`,
       failed && !success ? "error" : "success",
     );
-  }, [items, position, department, jobReqId, updateItem]);
+  }, [position, department, analyzeAndSave]);
+
+  const runBulk = useCallback(() => {
+    processList(items.map((i) => ({ id: i.id, file: i.file, fileName: i.fileName })));
+  }, [items, processList]);
+
+  const retryFailed = useCallback(() => {
+    processList(items.filter((i) => i.status === "error").map((i) => ({ id: i.id, file: i.file, fileName: i.fileName })));
+  }, [items, processList]);
 
   const exportCsv = useCallback(() => {
     if (ranked.length === 0) return;
@@ -340,13 +376,21 @@ export default function BulkCvAnalyzerPage() {
                   : `${items.length} CV${items.length === 1 ? "" : "s"} ready${errorCount ? ` · ${errorCount} failed last run` : ""}`}
               </p>
             </div>
-            <Button variant="primary" size="lg" disabled={!canRun} onClick={runBulk} className="shrink-0">
-              {running ? (
-                <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />Analyzing…</>
-              ) : (
-                <><Icon className="h-5 w-5"><SvgPath name="sparkles" /></Icon>Analyze {items.length || ""} CV{items.length === 1 ? "" : "s"}</>
+            <div className="flex shrink-0 gap-2">
+              {errorCount > 0 && !running && (
+                <Button variant="secondary" size="lg" onClick={retryFailed}>
+                  <Icon className="h-4 w-4"><SvgPath name="history" /></Icon>
+                  Retry failed ({errorCount})
+                </Button>
               )}
-            </Button>
+              <Button variant="primary" size="lg" disabled={!canRun} onClick={runBulk}>
+                {running ? (
+                  <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />Analyzing…</>
+                ) : (
+                  <><Icon className="h-5 w-5"><SvgPath name="sparkles" /></Icon>Analyze {items.length || ""} CV{items.length === 1 ? "" : "s"}</>
+                )}
+              </Button>
+            </div>
           </div>
           {(running || processedCount > 0) && (
             <div className="mt-4">
@@ -358,7 +402,7 @@ export default function BulkCvAnalyzerPage() {
               </div>
               <p className="mt-2 text-xs text-slate-400">
                 {doneCount} analyzed{errorCount ? ` · ${errorCount} failed` : ""} of {items.length}
-                {running && " · keeping it gentle on the AI rate limit (2 at a time)"}
+                {running && " · one at a time with auto-retry (gentle on the free-tier rate limit)"}
               </p>
             </div>
           )}

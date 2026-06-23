@@ -63,7 +63,7 @@ async function extractPdfText(buffer: Buffer): Promise<string> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function callGroq(prompt: string): Promise<string> {
+async function callGroq(prompt: string, maxAttempts = 3): Promise<string> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey || apiKey.startsWith("gsk_xxx")) {
     throw new Error("GROQ_API_KEY belum dikonfigurasi di .env.local. Dapatkan key gratis di console.groq.com");
@@ -85,7 +85,7 @@ async function callGroq(prompt: string): Promise<string> {
     response_format: { type: "json_object" }, // Groq JSON mode
   });
 
-  const MAX_ATTEMPTS = 3;
+  const MAX_ATTEMPTS = Math.max(1, maxAttempts);
   let lastErr = "";
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -116,7 +116,8 @@ async function callGroq(prompt: string): Promise<string> {
     // Retryable: 429 (rate limit) and 5xx (server) — back off and retry
     if ((response.status === 429 || response.status >= 500) && attempt < MAX_ATTEMPTS) {
       const retryAfter = parseFloat(response.headers.get("retry-after") ?? "");
-      const backoff = Number.isFinite(retryAfter) ? retryAfter * 1000 : 2 ** attempt * 500;
+      // Cap backoff so the serverless function never approaches its timeout.
+      const backoff = Math.min(4000, Number.isFinite(retryAfter) ? retryAfter * 1000 : 2 ** attempt * 500);
       console.log(`[analyze-cv] Retrying in ${backoff}ms…`);
       await sleep(backoff);
       lastErr = `Groq ${response.status}`;
@@ -140,6 +141,9 @@ export async function POST(request: NextRequest) {
     const candidateName = (formData.get("candidateName") as string)?.trim() ?? "";
     const targetPosition = (formData.get("targetPosition") as string)?.trim();
     const department = (formData.get("department") as string)?.trim();
+    // Bulk mode sends noRetry=true: do a single fast attempt and let the client
+    // pace + retry, so each serverless call stays well under the timeout.
+    const noRetry = (formData.get("noRetry") as string) === "true";
 
     if (!file || !targetPosition || !department) {
       return NextResponse.json(
@@ -168,7 +172,7 @@ export async function POST(request: NextRequest) {
     }
 
     const prompt = buildAnalysisPrompt(cvText, candidateName, targetPosition, department);
-    const rawResponse = await callGroq(prompt);
+    const rawResponse = await callGroq(prompt, noRetry ? 1 : 3);
     const result = parseAnalysisResponse(rawResponse);
 
     return NextResponse.json({
@@ -193,7 +197,8 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    return NextResponse.json({ error: message }, { status: 500 });
+    const isRateLimit = /rate limit|429/i.test(message);
+    return NextResponse.json({ error: message }, { status: isRateLimit ? 429 : 500 });
   }
 }
 
