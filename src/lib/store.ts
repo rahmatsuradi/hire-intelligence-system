@@ -711,7 +711,28 @@ export async function syncFromSupabase(): Promise<void> {
     supabase.from('job_reqs').select('*').order('created_at', { ascending: false }),
     supabase.from('activities').select('*').order('time', { ascending: false }).limit(50),
   ]);
-  if (candidatesRes.data?.length) writeJson(CANDIDATES_KEY, candidatesRes.data.map(rowToCandidate));
-  if (reqsRes.data?.length) writeJson(JOBREQS_KEY, reqsRes.data.map(rowToReq));
-  if (activitiesRes.data?.length) writeJson(ACTIVITY_KEY, activitiesRes.data.map(rowToActivity));
+
+  // Candidates: cloud wins if it has data; otherwise push local up (first-time migration).
+  if (candidatesRes.data?.length) {
+    writeJson(CANDIDATES_KEY, candidatesRes.data.map(rowToCandidate));
+  } else {
+    const local = getCandidates();
+    if (local.length) await supabase.from('candidates').upsert(local.map(candidateToRow));
+  }
+
+  // Job reqs
+  if (reqsRes.data?.length) {
+    writeJson(JOBREQS_KEY, reqsRes.data.map(rowToReq));
+  } else {
+    const local = getJobReqs();
+    if (local.length) await supabase.from('job_reqs').upsert(local.map(reqToRow));
+  }
+
+  // Activities
+  if (activitiesRes.data?.length) {
+    writeJson(ACTIVITY_KEY, activitiesRes.data.map(rowToActivity));
+  } else {
+    const local = getActivities();
+    if (local.length) await supabase.from('activities').upsert(local.map(activityToRow));
+  }
 }
