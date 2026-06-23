@@ -16,6 +16,7 @@ import {
   type CvAnalysisSnapshot,
 } from "@/lib/store";
 import { toast } from "@/components/toast";
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type Recommendation = "Strong Hire" | "Hire" | "Review" | "Reject";
@@ -648,7 +649,16 @@ export default function CvAnalyzerPage() {
   };
 
   return (
-    <AppShell activeNavId="cv-analyzer" title="CV Analyzer" subtitle="Multi-framework AI analysis · Groq · Llama 3.3">
+    <AppShell activeNavId="cv-analyzer" title="CV Analyzer" subtitle="Multi-framework AI analysis · Groq · Llama 3.3"
+      headerActions={
+        <Link href="/cv-analyzer/bulk">
+          <Button variant="primary" size="sm">
+            <Icon className="h-4 w-4"><SvgPath name="users" /></Icon>
+            Bulk analyze
+          </Button>
+        </Link>
+      }
+    >
       <div className="grid gap-6 xl:grid-cols-5">
         <div className="space-y-6 xl:col-span-2">
           <Card>

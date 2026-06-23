@@ -136,13 +136,14 @@ export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
-    const candidateName = (formData.get("candidateName") as string)?.trim();
+    // candidateName is OPTIONAL — when omitted (bulk mode), the AI extracts it from the CV.
+    const candidateName = (formData.get("candidateName") as string)?.trim() ?? "";
     const targetPosition = (formData.get("targetPosition") as string)?.trim();
     const department = (formData.get("department") as string)?.trim();
 
-    if (!file || !candidateName || !targetPosition || !department) {
+    if (!file || !targetPosition || !department) {
       return NextResponse.json(
-        { error: "Field wajib: file (PDF), candidateName, targetPosition, department" },
+        { error: "Field wajib: file (PDF), targetPosition, department" },
         { status: 400 }
       );
     }

@@ -41,6 +41,7 @@ export interface AiInterviewQuestion {
 }
 
 export interface AiAnalysisResult {
+  candidateName?: string; // extracted from CV when not provided (bulk mode)
   overallScore: number;
   matchScore: number;
   confidence: number;
@@ -295,9 +296,14 @@ export function buildAnalysisPrompt(
   const meta = FRAMEWORK_META[cluster];
   const trimmedCv = cvText.slice(0, 2500);
 
+  const hasName = Boolean(candidateName && candidateName.trim());
+  const nameLine = hasName
+    ? `KANDIDAT: ${candidateName}`
+    : `KANDIDAT: (tidak diberikan — EKSTRAK nama lengkap kandidat dari teks CV di bawah)`;
+
   return `Kamu adalah Senior Talent Assessment Specialist di perusahaan multinasional Fortune 500. Analisis CV kandidat menggunakan framework kompetensi standar internasional. Kembalikan HANYA JSON valid tanpa teks tambahan apapun.
 
-KANDIDAT: ${candidateName}
+${nameLine}
 POSISI TARGET: ${targetPosition}
 DEPARTEMEN: ${department}
 FRAMEWORK: ${meta.label}
@@ -318,6 +324,7 @@ INSTRUKSI:
 
 OUTPUT JSON:
 {
+  "candidateName": "${hasName ? candidateName : "<nama lengkap kandidat hasil ekstraksi dari CV>"}",
   "overallScore": <0-100>,
   "matchScore": <0-100>,
   "confidence": <0-100>,
@@ -366,6 +373,8 @@ export function parseAnalysisResponse(rawResponse: string): AiAnalysisResult {
 
   if (!parsed.cluster) parsed.cluster = "business";
   if (!parsed.frameworkLabel) parsed.frameworkLabel = FRAMEWORK_META[parsed.cluster].label;
+
+  if (parsed.candidateName) parsed.candidateName = String(parsed.candidateName).trim().slice(0, 80);
 
   return parsed;
 }

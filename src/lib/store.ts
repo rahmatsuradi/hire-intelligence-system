@@ -332,6 +332,54 @@ export function saveCvAnalysis(
   });
 }
 
+/** Bulk analysis: create-or-update a candidate with a CV analysis snapshot.
+ *  Does NOT log a per-candidate activity (the batch logs one summary instead).
+ *  Matches existing candidates by name + position so re-runs update in place.
+ *  Syncs to Supabase via saveCandidate. */
+export function upsertAnalyzedCandidate(data: {
+  name: string;
+  position: string;
+  department: string;
+  jobReqId?: string;
+  source?: string;
+  snapshot: CvAnalysisSnapshot;
+}): CandidateRecord {
+  const now = new Date().toISOString();
+  const existing = findCandidateByName(data.name, data.position);
+  const candidate: CandidateRecord = existing ?? {
+    id: generateId("C"),
+    name: data.name,
+    email: "",
+    phone: "",
+    stage: "applied",
+    jobReqId: data.jobReqId ?? "",
+    department: data.department,
+    position: data.position,
+    source: data.source ?? "Bulk CV",
+    notes: "",
+    cvAnalysis: null,
+    interviewResults: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+  candidate.cvAnalysis = data.snapshot;
+  if (candidate.stage === "applied") candidate.stage = "screened";
+  if (data.jobReqId && !candidate.jobReqId) candidate.jobReqId = data.jobReqId;
+  candidate.updatedAt = now;
+  saveCandidate(candidate);
+  return candidate;
+}
+
+/** Log one summary activity for a completed bulk analysis run. */
+export function logBulkAnalysis(count: number, position: string): void {
+  if (count <= 0) return;
+  addActivity({
+    action: "Bulk CV analysis:",
+    target: `${count} CV${count === 1 ? "" : "s"} analyzed for ${position}`,
+    type: "analysis",
+  });
+}
+
 export function saveInterviewResult(
   candidateId: string,
   result: InterviewResultSnapshot,
