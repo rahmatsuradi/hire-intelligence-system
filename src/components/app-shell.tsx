@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getCandidates, getJobReqs } from "@/lib/store";
+import { getCandidates, getJobReqs, syncFromSupabase } from "@/lib/store";
 import { Toaster } from "@/components/toast";
 import { ErrorBoundary } from "@/components/error-boundary";
 
@@ -183,7 +183,8 @@ export function AppShell({
       candidates: getCandidates().length,
       roles: getJobReqs().filter((r) => r.status === "active").length,
     });
-    refresh();
+    refresh(); // immediate from localStorage
+    syncFromSupabase().then(refresh).catch(() => {}); // then re-sync from cloud
     document.addEventListener("visibilitychange", refresh);
     return () => document.removeEventListener("visibilitychange", refresh);
   }, []);

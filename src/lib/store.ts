@@ -1,7 +1,12 @@
 /* ═══════════════════════════════════════════════════════════════════════════
    Hire Intelligence — Persistent Data Store
-   All data lives in localStorage. Every module reads/writes through here.
+   localStorage is the local cache; Supabase is the persistent cloud backend.
+   On app mount, data is fetched from Supabase and written to localStorage.
+   Every write goes to localStorage first (synchronous), then fires an async
+   upsert/delete to Supabase in the background (fire-and-forget).
 ═══════════════════════════════════════════════════════════════════════════ */
+
+import { supabase } from './supabase';
 
 export type PipelineStage = "applied" | "screened" | "interviewed" | "offered" | "hired" | "rejected";
 export type ReqStatus = "draft" | "active" | "paused" | "closed";
@@ -93,6 +98,76 @@ export function generateId(prefix: string): string {
   return `${prefix}-${date}-${rand}`;
 }
 
+/* ─── Supabase row mappers (camelCase ↔ snake_case) ─── */
+
+function candidateToRow(c: CandidateRecord) {
+  return {
+    id: c.id, name: c.name, email: c.email, phone: c.phone, stage: c.stage,
+    job_req_id: c.jobReqId, department: c.department, position: c.position,
+    source: c.source, notes: c.notes, cv_analysis: c.cvAnalysis,
+    interview_results: c.interviewResults, created_at: c.createdAt, updated_at: c.updatedAt,
+  };
+}
+
+function rowToCandidate(r: Record<string, unknown>): CandidateRecord {
+  return {
+    id: r.id as string, name: r.name as string,
+    email: (r.email as string) ?? '', phone: (r.phone as string) ?? '',
+    stage: (r.stage as PipelineStage) ?? 'applied',
+    jobReqId: (r.job_req_id as string) ?? '',
+    department: (r.department as string) ?? '',
+    position: r.position as string,
+    source: (r.source as string) ?? 'Manual',
+    notes: (r.notes as string) ?? '',
+    cvAnalysis: (r.cv_analysis as CvAnalysisSnapshot | null) ?? null,
+    interviewResults: (r.interview_results as InterviewResultSnapshot[]) ?? [],
+    createdAt: r.created_at as string, updatedAt: r.updated_at as string,
+  };
+}
+
+function reqToRow(r: JobRequisition) {
+  return {
+    id: r.id, title: r.title, department: r.department, level: r.level, status: r.status,
+    description: r.description, requirements: r.requirements,
+    salary_min: r.salaryMin, salary_max: r.salaryMax, currency: r.currency,
+    location: r.location, target_date: r.targetDate, headcount: r.headcount,
+    hiring_manager: r.hiringManager, created_at: r.createdAt, updated_at: r.updatedAt,
+  };
+}
+
+function rowToReq(r: Record<string, unknown>): JobRequisition {
+  return {
+    id: r.id as string, title: r.title as string,
+    department: (r.department as string) ?? '',
+    level: (r.level as string) ?? '',
+    status: (r.status as ReqStatus) ?? 'draft',
+    description: (r.description as string) ?? '',
+    requirements: (r.requirements as string) ?? '',
+    salaryMin: (r.salary_min as number) ?? 0,
+    salaryMax: (r.salary_max as number) ?? 0,
+    currency: (r.currency as string) ?? 'IDR',
+    location: (r.location as string) ?? '',
+    targetDate: (r.target_date as string) ?? '',
+    headcount: (r.headcount as number) ?? 1,
+    hiringManager: (r.hiring_manager as string) ?? '',
+    createdAt: r.created_at as string, updatedAt: r.updated_at as string,
+  };
+}
+
+function activityToRow(a: ActivityEntry) {
+  return { id: a.id, action: a.action, target: a.target, user: a.user, time: a.time, type: a.type };
+}
+
+function rowToActivity(r: Record<string, unknown>): ActivityEntry {
+  return {
+    id: r.id as string, action: r.action as string,
+    target: (r.target as string) ?? '',
+    user: (r.user as string) ?? 'You',
+    time: r.time as string,
+    type: r.type as ActivityEntry['type'],
+  };
+}
+
 function readJson<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
   try {
@@ -126,10 +201,12 @@ export function saveCandidate(candidate: CandidateRecord): void {
   if (idx >= 0) all[idx] = candidate;
   else all.unshift(candidate);
   writeJson(CANDIDATES_KEY, all);
+  supabase?.from('candidates').upsert(candidateToRow(candidate)).then(() => {});
 }
 
 export function deleteCandidate(id: string): void {
   writeJson(CANDIDATES_KEY, getCandidates().filter((c) => c.id !== id));
+  supabase?.from('candidates').delete().eq('id', id).then(() => {});
 }
 
 export function moveCandidateStage(id: string, stage: PipelineStage): void {
@@ -225,6 +302,7 @@ export function importCandidates(rows: ImportRow[]): number {
       target: `${added} candidate${added === 1 ? "" : "s"} via CSV`,
       type: "create",
     });
+    supabase?.from('candidates').upsert(all.slice(0, added).map(candidateToRow)).then(() => {});
   }
   return added;
 }
@@ -287,10 +365,12 @@ export function saveJobReq(req: JobRequisition): void {
   if (idx >= 0) all[idx] = req;
   else all.unshift(req);
   writeJson(JOBREQS_KEY, all);
+  supabase?.from('job_reqs').upsert(reqToRow(req)).then(() => {});
 }
 
 export function deleteJobReq(id: string): void {
   writeJson(JOBREQS_KEY, getJobReqs().filter((r) => r.id !== id));
+  supabase?.from('job_reqs').delete().eq('id', id).then(() => {});
 }
 
 export function createJobReq(data: {
@@ -348,15 +428,17 @@ export function addActivity(data: {
   user?: string;
 }): void {
   const all = getActivities();
-  all.unshift({
+  const entry: ActivityEntry = {
     id: generateId("A"),
     action: data.action,
     target: data.target,
     user: data.user ?? "You",
     time: new Date().toISOString(),
     type: data.type,
-  });
+  };
+  all.unshift(entry);
   writeJson(ACTIVITY_KEY, all.slice(0, 50));
+  supabase?.from('activities').insert(activityToRow(entry)).then(() => {});
 }
 
 /* ─── Dashboard Stats ─── */
@@ -437,6 +519,10 @@ export function hasDemoData(): boolean {
 export function clearDemoData(): void {
   writeJson(CANDIDATES_KEY, getCandidates().filter((c) => c.source !== "Demo"));
   writeJson(JOBREQS_KEY, getJobReqs().filter((r) => !r.hiringManager.startsWith("Demo:")));
+  if (supabase) {
+    supabase.from('candidates').delete().eq('source', 'Demo').then(() => {});
+    supabase.from('job_reqs').delete().like('hiring_manager', 'Demo:%').then(() => {});
+  }
 }
 
 export function loadDemoData(): void {
@@ -609,4 +695,23 @@ export function loadDemoData(): void {
   writeJson(CANDIDATES_KEY, [...candidates, ...existingCandidates]);
   writeJson(JOBREQS_KEY, [...reqs, ...existingReqs]);
   writeJson(ACTIVITY_KEY, [...activities, ...existingActivities].slice(0, 50));
+  if (supabase) {
+    supabase.from('candidates').upsert(candidates.map(candidateToRow)).then(() => {});
+    supabase.from('job_reqs').upsert(reqs.map(reqToRow)).then(() => {});
+    supabase.from('activities').upsert(activities.map(activityToRow)).then(() => {});
+  }
+}
+
+/* ─── Cloud sync ─── */
+
+export async function syncFromSupabase(): Promise<void> {
+  if (!supabase) return;
+  const [candidatesRes, reqsRes, activitiesRes] = await Promise.all([
+    supabase.from('candidates').select('*').order('created_at', { ascending: false }),
+    supabase.from('job_reqs').select('*').order('created_at', { ascending: false }),
+    supabase.from('activities').select('*').order('time', { ascending: false }).limit(50),
+  ]);
+  if (candidatesRes.data?.length) writeJson(CANDIDATES_KEY, candidatesRes.data.map(rowToCandidate));
+  if (reqsRes.data?.length) writeJson(JOBREQS_KEY, reqsRes.data.map(rowToReq));
+  if (activitiesRes.data?.length) writeJson(ACTIVITY_KEY, activitiesRes.data.map(rowToActivity));
 }
