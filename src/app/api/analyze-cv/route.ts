@@ -81,7 +81,7 @@ async function callGroq(prompt: string, maxAttempts = 3): Promise<string> {
       { role: "user", content: prompt },
     ],
     temperature: 0.2,
-    max_tokens: 4096,
+    max_tokens: 2600, // enough for the full JSON (≤11 competencies); lower = more CVs fit the 12k tokens/min budget
     response_format: { type: "json_object" }, // Groq JSON mode
   });
 
@@ -124,7 +124,12 @@ async function callGroq(prompt: string, maxAttempts = 3): Promise<string> {
       continue;
     }
 
-    if (response.status === 429) throw new Error("Rate limit Groq tercapai. Tunggu sebentar lalu coba lagi.");
+    if (response.status === 429) {
+      const ra = parseFloat(response.headers.get("retry-after") ?? "");
+      const err = new Error("Rate limit Groq tercapai.") as Error & { retryAfter?: number };
+      if (Number.isFinite(ra)) err.retryAfter = ra;
+      throw err;
+    }
     throw new Error(`Groq API error ${response.status}: ${errorText.slice(0, 200)}`);
   }
 
@@ -198,7 +203,8 @@ export async function POST(request: NextRequest) {
     }
 
     const isRateLimit = /rate limit|429/i.test(message);
-    return NextResponse.json({ error: message }, { status: isRateLimit ? 429 : 500 });
+    const retryAfter = (error as { retryAfter?: number })?.retryAfter;
+    return NextResponse.json({ error: message, retryAfter }, { status: isRateLimit ? 429 : 500 });
   }
 }
 

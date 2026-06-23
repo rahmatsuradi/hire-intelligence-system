@@ -22,8 +22,10 @@ const DEPARTMENTS = [
 ];
 
 const MAX_FILES = 200;
-const MAX_TRY = 3;        // client-side retries per CV (handles transient rate limits)
-const PACING_MS = 1200;   // gentle gap between CVs to respect Groq free-tier limits
+const MAX_TRY = 5;          // client-side attempts per CV (waits out a short rate limit)
+const PACING_MS = 1200;     // gap between CVs when the budget is available
+const FALLBACK_WAIT_MS = 20000; // wait when Groq doesn't send a retry-after (≈ TPM reset window)
+const LONG_COOLDOWN_SEC = 45;   // if Groq asks to wait longer than this, fail fast → user uses "Retry failed"
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -161,18 +163,32 @@ export default function BulkCvAnalyzerPage() {
 
         const res = await fetch("/api/analyze-cv", { method: "POST", body: fd });
         const raw = await res.text();
-        let json: { result?: AiAnalysisResult; error?: string } | null = null;
-        try { json = JSON.parse(raw) as { result?: AiAnalysisResult; error?: string }; }
+        let json: { result?: AiAnalysisResult; error?: string; retryAfter?: number } | null = null;
+        try { json = JSON.parse(raw) as { result?: AiAnalysisResult; error?: string; retryAfter?: number }; }
         catch { /* non-JSON = server overloaded / timed out */ }
 
         if (!json) {
-          if (attempt < MAX_TRY) { await sleep(attempt * 5000); continue; }
-          throw new Error("Server sibuk (timeout). Coba lagi sebentar.");
+          if (attempt < MAX_TRY) {
+            updateItem(target.id, { status: "processing", error: `Server sibuk — tunggu 8s (${attempt}/${MAX_TRY})` });
+            await sleep(8000); continue;
+          }
+          throw new Error('Server sibuk (timeout). Pakai "Retry failed".');
         }
         if (!res.ok || json.error) {
           const msg = json.error ?? `Server error ${res.status}`;
           const retryable = res.status === 429 || res.status >= 500;
-          if (retryable && attempt < MAX_TRY) { await sleep(attempt * 5000); continue; }
+          if (retryable && attempt < MAX_TRY) {
+            const retrySec = res.status === 429
+              ? (json.retryAfter && json.retryAfter > 0 ? json.retryAfter : FALLBACK_WAIT_MS / 1000)
+              : attempt * 4;
+            // Long cooldown: don't burn minutes per CV — fail fast so the user waits once, then "Retry failed".
+            if (retrySec > LONG_COOLDOWN_SEC) {
+              throw new Error(`Limit Groq aktif (~${Math.ceil(retrySec / 60)} mnt). Tunggu, lalu klik "Retry failed".`);
+            }
+            const waitMs = Math.ceil(retrySec * 1000) + 1000;
+            updateItem(target.id, { status: "processing", error: `Limit Groq — tunggu ${Math.ceil(waitMs / 1000)}s (${attempt}/${MAX_TRY})` });
+            await sleep(waitMs); continue;
+          }
           throw new Error(msg);
         }
         const result = json.result;
