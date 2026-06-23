@@ -1,0 +1,174 @@
+"use client";
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Login / Sign-up page — standalone (no AppShell, no auth gate).
+   Uses Supabase email + password auth. On success, redirects to the dashboard.
+═══════════════════════════════════════════════════════════════════════════ */
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
+
+const inputClass =
+  "w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/25 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500";
+
+export default function LoginPage() {
+  const router = useRouter();
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  // Already logged in? Skip straight to the dashboard.
+  useEffect(() => {
+    if (!supabase) return;
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) router.replace("/");
+    });
+  }, [router]);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setNotice("");
+
+    if (!supabase) {
+      setError("Database is not configured. Add Supabase keys to enable login.");
+      return;
+    }
+    const mail = email.trim();
+    if (!mail || !password) {
+      setError("Email and password are required.");
+      return;
+    }
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      if (mode === "signup") {
+        const { data, error: err } = await supabase.auth.signUp({ email: mail, password });
+        if (err) throw err;
+        if (data.session) {
+          router.replace("/");
+        } else {
+          // Email confirmation is enabled in Supabase — user must confirm first.
+          setNotice("Account created. Check your email to confirm, then sign in.");
+          setMode("signin");
+        }
+      } else {
+        const { error: err } = await supabase.auth.signInWithPassword({ email: mail, password });
+        if (err) throw err;
+        router.replace("/");
+      }
+    } catch (err) {
+      setError((err as Error).message || "Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-12 dark:bg-slate-950">
+      <div className="w-full max-w-sm">
+        {/* Brand */}
+        <div className="mb-8 flex flex-col items-center text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/25">
+            <span className="text-lg font-bold tracking-tight">HI</span>
+          </div>
+          <h1 className="mt-4 text-xl font-semibold text-slate-900 dark:text-white">Hire Intelligence</h1>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            {mode === "signin" ? "Sign in to your workspace" : "Create your account"}
+          </p>
+        </div>
+
+        {/* Card */}
+        <div className="rounded-xl border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <form onSubmit={submit} className="space-y-4">
+            <div>
+              <label htmlFor="email" className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                Email
+              </label>
+              <input
+                id="email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@company.com"
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label htmlFor="password" className="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300">
+                Password
+              </label>
+              <input
+                id="password"
+                type="password"
+                autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                className={inputClass}
+              />
+            </div>
+
+            {error && (
+              <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-950 dark:text-red-300">
+                {error}
+              </p>
+            )}
+            {notice && (
+              <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-950 dark:text-emerald-300">
+                {notice}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 disabled:pointer-events-none disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600"
+            >
+              {loading ? "Please wait…" : mode === "signin" ? "Sign in" : "Create account"}
+            </button>
+          </form>
+
+          <div className="mt-5 text-center text-sm text-slate-500 dark:text-slate-400">
+            {mode === "signin" ? (
+              <>
+                Don&apos;t have an account?{" "}
+                <button
+                  type="button"
+                  onClick={() => { setMode("signup"); setError(""); setNotice(""); }}
+                  className="font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                >
+                  Sign up
+                </button>
+              </>
+            ) : (
+              <>
+                Already have an account?{" "}
+                <button
+                  type="button"
+                  onClick={() => { setMode("signin"); setError(""); setNotice(""); }}
+                  className="font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                >
+                  Sign in
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
+        <p className="mt-6 text-center text-xs text-slate-400 dark:text-slate-500">
+          &copy; 2026 Hire Intelligence &middot; Enterprise Hiring Platform
+        </p>
+      </div>
+    </div>
+  );
+}

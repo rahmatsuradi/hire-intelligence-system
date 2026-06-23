@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { getCandidates, getJobReqs, syncFromSupabase } from "@/lib/store";
+import { useAuthGate, signOut } from "@/lib/use-auth";
 import { Toaster } from "@/components/toast";
 import { ErrorBoundary } from "@/components/error-boundary";
 
@@ -76,6 +78,7 @@ export const ICON_PATHS = {
   calendarDays: "M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5m-9-3h3.75m-3.75 0h3.75m-3.75 0H9",
   xmark: "M6 18L18 6M6 6l12 12",
   chevronUp: "M4.5 15.75l7.5-7.5 7.5 7.5",
+  logout: "M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9",
   trendUp: "M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941",
   trendDown: "M2.25 6L9 12.75l4.286-4.286a11.948 11.948 0 014.306 6.43l.776-2.898m0 0l-3.182-5.511m3.182 5.51l-5.511-3.181",
   filter: "M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z",
@@ -135,6 +138,8 @@ export function AppShell({
   headerActions?: React.ReactNode;
   children: React.ReactNode;
 }) {
+  const router = useRouter();
+  const { status: authStatus, email: authEmail } = useAuthGate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [theme, setTheme] = useState<Theme>(() => {
     if (typeof window === "undefined") return "system";
@@ -184,10 +189,17 @@ export function AppShell({
       roles: getJobReqs().filter((r) => r.status === "active").length,
     });
     refresh(); // immediate from localStorage
-    syncFromSupabase().then(refresh).catch(() => {}); // then re-sync from cloud
+    if (authStatus === "authed") {
+      syncFromSupabase().then(refresh).catch(() => {}); // re-sync from cloud once logged in
+    }
     document.addEventListener("visibilitychange", refresh);
     return () => document.removeEventListener("visibilitychange", refresh);
-  }, []);
+  }, [authStatus]);
+
+  const handleSignOut = useCallback(async () => {
+    await signOut();
+    router.replace("/login");
+  }, [router]);
 
   const navItems: NavItem[] = useMemo(() => [
     { id: "dashboard", label: "Dashboard", href: "/", section: "main" },
@@ -205,6 +217,16 @@ export function AppShell({
 
   const mainNav = navItems.filter((n) => n.section === "main");
   const toolsNav = navItems.filter((n) => n.section === "tools");
+
+  // Auth gate: show a loader while checking, render nothing while redirecting.
+  if (authStatus === "loading") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-blue-600 dark:border-slate-700 dark:border-t-blue-500" />
+      </div>
+    );
+  }
+  if (authStatus === "anon") return null; // redirecting to /login
 
   const renderNav = (items: NavItem[]) =>
     items.map((item) => {
@@ -283,9 +305,14 @@ export function AppShell({
               </button>
               <div className="hidden text-left lg:block">
                 <p className="text-sm font-medium text-slate-900 dark:text-white">{userName}</p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Recruiter</p>
+                <p className="max-w-[12rem] truncate text-xs text-slate-500 dark:text-slate-400">{authEmail || "Recruiter"}</p>
               </div>
             </div>
+            {authEmail && (
+              <button type="button" onClick={handleSignOut} title="Sign out" aria-label="Sign out" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">
+                <Icon className="h-5 w-5"><SvgPath name="logout" /></Icon>
+              </button>
+            )}
           </div>
         </header>
 
