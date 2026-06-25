@@ -8,9 +8,12 @@ import {
   type CandidateRecord, type PipelineStage, type JobRequisition, type ImportRow,
   PIPELINE_STAGES, STAGE_LABELS,
   getCandidates, getJobReqs, saveCandidate, deleteCandidate,
-  moveCandidateStage, createCandidate, importCandidates,
+  moveCandidateStage, createCandidate, importCandidates, addActivity,
 } from "@/lib/store";
 import { toast } from "@/components/toast";
+import {
+  type EmailTemplateKey, TEMPLATE_ORDER, getTemplates, composeEmail, buildMailto,
+} from "@/lib/email-templates";
 
 /* ─── Stage colors ─── */
 
@@ -160,6 +163,77 @@ function KanbanColumn({
 
 /* ─── Detail Panel ─── */
 
+/* ─── Email compose modal (mailto, zero backend) ─── */
+
+function EmailComposeModal({
+  candidate, templateKey, onClose,
+}: {
+  candidate: CandidateRecord;
+  templateKey: EmailTemplateKey;
+  onClose: () => void;
+}) {
+  const composed = useMemo(() => composeEmail(templateKey, candidate), [templateKey, candidate]);
+  const label = getTemplates()[templateKey].label;
+  const [subject, setSubject] = useState(composed.subject);
+  const [body, setBody] = useState(composed.body);
+  const hasEmail = Boolean(candidate.email && candidate.email.trim());
+
+  const openInMail = () => {
+    if (!hasEmail) { toast("Kandidat ini belum punya alamat email.", "error"); return; }
+    window.location.href = buildMailto(candidate.email, subject, body);
+    addActivity({ action: "Email disiapkan:", target: `${candidate.name} — ${label}`, type: "create" });
+    toast("Membuka aplikasi email…");
+    onClose();
+  };
+
+  const copyText = async () => {
+    try {
+      await navigator.clipboard.writeText(`Kepada: ${candidate.email || "-"}\nSubjek: ${subject}\n\n${body}`);
+      toast("Teks email disalin.");
+    } catch { toast("Gagal menyalin.", "error"); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="flex max-h-[90vh] w-full max-w-lg flex-col rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+          <div className="flex items-center gap-2">
+            <Icon className="h-5 w-5 text-blue-600 dark:text-blue-400"><SvgPath name="envelope" /></Icon>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">{label}</h2>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Close">
+            <Icon className="h-5 w-5"><SvgPath name="close" /></Icon>
+          </button>
+        </div>
+        <div className="space-y-3 overflow-y-auto p-5">
+          <div>
+            <Label htmlFor="em-to">Kepada</Label>
+            <input id="em-to" className={cn(inputClass, !hasEmail && "border-red-400")} value={candidate.email || ""} readOnly placeholder="(belum ada email)" />
+            {!hasEmail && <p className="mt-1 text-xs text-red-500">Tambah email kandidat dulu (tombol Edit) agar bisa kirim.</p>}
+          </div>
+          <div>
+            <Label htmlFor="em-subject">Subjek</Label>
+            <input id="em-subject" className={inputClass} value={subject} onChange={(e) => setSubject(e.target.value)} />
+          </div>
+          <div>
+            <Label htmlFor="em-body">Isi email</Label>
+            <textarea id="em-body" className={cn(inputClass, "min-h-[220px]")} value={body} onChange={(e) => setBody(e.target.value)} />
+          </div>
+          <p className="text-xs text-slate-400">Edit bebas sebelum kirim. Nama perusahaan diatur di Settings.</p>
+        </div>
+        <div className="flex items-center gap-2 border-t border-slate-200 p-4 dark:border-slate-800">
+          <Button variant="primary" onClick={openInMail} disabled={!hasEmail}>
+            <Icon className="h-4 w-4"><SvgPath name="envelope" /></Icon> Buka di aplikasi email
+          </Button>
+          <Button variant="secondary" onClick={copyText}>Salin teks</Button>
+          <div className="flex-1" />
+          <Button variant="ghost" onClick={onClose}>Tutup</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DetailPanel({
   candidate,
   reqs,
@@ -177,8 +251,9 @@ function DetailPanel({
 }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(candidate);
+  const [composeKey, setComposeKey] = useState<EmailTemplateKey | null>(null);
 
-  useEffect(() => { setForm(candidate); setEditing(false); }, [candidate]);
+  useEffect(() => { setForm(candidate); setEditing(false); setComposeKey(null); }, [candidate]);
 
   const handleSave = () => {
     const updated = { ...form, updatedAt: new Date().toISOString() };
@@ -225,6 +300,30 @@ function DetailPanel({
               );
             })}
           </div>
+        </div>
+
+        {/* Email actions */}
+        <div>
+          <Label>Kirim Email</Label>
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            {TEMPLATE_ORDER.map((k) => {
+              const t = getTemplates()[k];
+              return (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setComposeKey(k)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+                >
+                  <Icon className="h-3.5 w-3.5"><SvgPath name="envelope" /></Icon>
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+          {!candidate.email && (
+            <p className="mt-1 text-xs text-slate-400">Kandidat belum punya email — tambahkan via Edit.</p>
+          )}
         </div>
 
         {/* CV analysis summary */}
@@ -360,6 +459,10 @@ function DetailPanel({
           <Icon className="h-4 w-4"><SvgPath name="trash" /></Icon>
         </Button>
       </div>
+
+      {composeKey && (
+        <EmailComposeModal candidate={candidate} templateKey={composeKey} onClose={() => setComposeKey(null)} />
+      )}
     </div>
   );
 }
