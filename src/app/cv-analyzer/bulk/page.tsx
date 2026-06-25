@@ -23,9 +23,11 @@ const DEPARTMENTS = [
 
 const MAX_FILES = 200;
 const MAX_TRY = 5;          // client-side attempts per CV (waits out a short rate limit)
-const PACING_MS = 1200;     // gap between CVs when the budget is available
+const PACING_MS = 600;      // small gap between CVs when budget is available
 const FALLBACK_WAIT_MS = 20000; // wait when Groq doesn't send a retry-after (≈ TPM reset window)
-const LONG_COOLDOWN_SEC = 45;   // if Groq asks to wait longer than this, fail fast → user uses "Retry failed"
+const LONG_COOLDOWN_SEC = 90;   // if Groq asks to wait longer than this, fail fast → user uses "Retry failed"
+const PER_CV_EST = 5000;    // approx tokens one CV needs available to be admitted
+const REFILL_PER_SEC = 200; // Groq free tier refills ~12,000 tokens/min = 200/sec
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -148,7 +150,7 @@ export default function BulkCvAnalyzerPage() {
   const analyzeAndSave = useCallback(async (
     target: { id: string; file: File; fileName: string },
     pos: string,
-  ): Promise<boolean> => {
+  ): Promise<{ ok: boolean; remainingTokens?: number | null }> => {
     for (let attempt = 1; attempt <= MAX_TRY; attempt++) {
       updateItem(target.id, {
         status: "processing",
@@ -163,8 +165,9 @@ export default function BulkCvAnalyzerPage() {
 
         const res = await fetch("/api/analyze-cv", { method: "POST", body: fd });
         const raw = await res.text();
-        let json: { result?: AiAnalysisResult; error?: string; retryAfter?: number } | null = null;
-        try { json = JSON.parse(raw) as { result?: AiAnalysisResult; error?: string; retryAfter?: number }; }
+        type ApiResp = { result?: AiAnalysisResult; error?: string; retryAfter?: number; meta?: { remainingTokens?: number | null; resetSeconds?: number | null } };
+        let json: ApiResp | null = null;
+        try { json = JSON.parse(raw) as ApiResp; }
         catch { /* non-JSON = server overloaded / timed out */ }
 
         if (!json) {
@@ -209,16 +212,16 @@ export default function BulkCvAnalyzerPage() {
           overallScore: result.overallScore, matchScore: result.matchScore,
           recommendation: result.recommendation, frameworkLabel: result.frameworkLabel,
         });
-        return true;
+        return { ok: true, remainingTokens: json.meta?.remainingTokens ?? null };
       } catch (err) {
         if (attempt >= MAX_TRY) {
           updateItem(target.id, { status: "error", error: (err as Error).message });
-          return false;
+          return { ok: false };
         }
         await sleep(attempt * 3000);
       }
     }
-    return false;
+    return { ok: false };
   }, [department, jobReqId, updateItem]);
 
   // Process a list of CVs sequentially (gentle on the rate limit).
@@ -232,9 +235,19 @@ export default function BulkCvAnalyzerPage() {
       : i));
 
     let success = 0;
+    let budget: number | null = null; // tokens remaining reported by the last successful call
     for (const t of targets) {
-      const ok = await analyzeAndSave(t, pos);
-      if (ok) success++;
+      // Adaptive pacing: if the Groq budget is too low for another CV, wait for it to refill
+      // (≈200 tokens/sec) BEFORE firing — this avoids hitting the limit and triggering a cooldown.
+      if (budget !== null && budget < PER_CV_EST) {
+        const waitSec = Math.min(60, Math.ceil((PER_CV_EST - budget) / REFILL_PER_SEC) + 2);
+        updateItem(t.id, { status: "processing", error: `Menjaga ritme — tunggu kuota ${waitSec}s…` });
+        await sleep(waitSec * 1000);
+        budget = PER_CV_EST; // assume enough refilled for one CV
+      }
+      const r = await analyzeAndSave(t, pos);
+      if (r.ok) success++;
+      budget = r.ok && typeof r.remainingTokens === "number" ? r.remainingTokens : null;
       await sleep(PACING_MS);
     }
 

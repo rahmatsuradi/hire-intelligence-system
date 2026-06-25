@@ -63,7 +63,24 @@ async function extractPdfText(buffer: Buffer): Promise<string> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function callGroq(prompt: string, maxAttempts = 3): Promise<string> {
+interface GroqCall {
+  content: string;
+  remainingTokens: number | null; // x-ratelimit-remaining-tokens (per-minute bucket)
+  resetSeconds: number | null;     // x-ratelimit-reset-tokens, normalised to seconds
+}
+
+// Groq sends durations like "185ms", "7.66s", "1m26.4s" — normalise to seconds.
+function parseDurationSeconds(s: string | null): number | null {
+  if (!s) return null;
+  let total = 0;
+  const m = s.match(/([\d.]+)m(?![s])/); if (m) total += parseFloat(m[1]) * 60;
+  const sec = s.match(/([\d.]+)s/); if (sec) total += parseFloat(sec[1]);
+  const ms = s.match(/([\d.]+)ms/); if (ms) total += parseFloat(ms[1]) / 1000;
+  if (!m && !sec && !ms) { const n = parseFloat(s); return Number.isFinite(n) ? n : null; }
+  return total;
+}
+
+async function callGroq(prompt: string, maxAttempts = 3): Promise<GroqCall> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey || apiKey.startsWith("gsk_xxx")) {
     throw new Error("GROQ_API_KEY belum dikonfigurasi di .env.local. Dapatkan key gratis di console.groq.com");
@@ -103,7 +120,12 @@ async function callGroq(prompt: string, maxAttempts = 3): Promise<string> {
       const text = data.choices?.[0]?.message?.content;
       if (!text) throw new Error("Groq mengembalikan respons kosong.");
       console.log("[analyze-cv] Groq OK, tokens:", data.usage?.prompt_tokens, "+", data.usage?.completion_tokens);
-      return text;
+      const remTok = parseFloat(response.headers.get("x-ratelimit-remaining-tokens") ?? "");
+      return {
+        content: text,
+        remainingTokens: Number.isFinite(remTok) ? remTok : null,
+        resetSeconds: parseDurationSeconds(response.headers.get("x-ratelimit-reset-tokens")),
+      };
     }
 
     const errorText = await response.text();
@@ -177,13 +199,18 @@ export async function POST(request: NextRequest) {
     }
 
     const prompt = buildAnalysisPrompt(cvText, candidateName, targetPosition, department);
-    const rawResponse = await callGroq(prompt, noRetry ? 1 : 3);
-    const result = parseAnalysisResponse(rawResponse);
+    const groq = await callGroq(prompt, noRetry ? 1 : 3);
+    const result = parseAnalysisResponse(groq.content);
 
     return NextResponse.json({
       success: true,
       result,
-      meta: { model: GROQ_MODEL, cvTextLength: cvText.length },
+      meta: {
+        model: GROQ_MODEL,
+        cvTextLength: cvText.length,
+        remainingTokens: groq.remainingTokens,
+        resetSeconds: groq.resetSeconds,
+      },
     });
 
   } catch (error) {
