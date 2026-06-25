@@ -1,27 +1,28 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { AppShell, Button, Card, Label, inputClass } from "@/components/app-shell";
-import { setCompanyName } from "@/lib/email-templates";
+import { setCompanyName, setCompanyEmail } from "@/lib/email-templates";
 
 export default function SettingsPage() {
   const [userName, setUserName] = useState("");
   const [company, setCompany] = useState("");
+  const [companyEmail, setCompanyEmailState] = useState("");
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     setUserName(localStorage.getItem("hi_user_name") ?? "");
     setCompany(localStorage.getItem("hi_company_name") ?? "");
+    setCompanyEmailState(localStorage.getItem("hi_company_email") ?? "");
   }, []);
 
   const handleSave = useCallback(() => {
     const name = userName.trim();
     if (name) localStorage.setItem("hi_user_name", name);
     setCompanyName(company);
-    if (name) {
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2500);
-    }
-  }, [userName, company]);
+    setCompanyEmail(companyEmail);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2500);
+  }, [userName, company, companyEmail]);
 
   const handleClearAll = useCallback(() => {
     if (!window.confirm("This will delete ALL candidates, roles, and activity history. Are you sure?")) return;
@@ -60,6 +61,19 @@ export default function SettingsPage() {
                 className={inputClass}
               />
               <p className="mt-1 text-xs text-slate-400">Used to fill {"{{company}}"} in candidate emails.</p>
+            </div>
+            <div>
+              <Label htmlFor="company-email">Company email (optional)</Label>
+              <input
+                id="company-email"
+                type="email"
+                value={companyEmail}
+                onChange={(e) => setCompanyEmailState(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSave()}
+                placeholder="e.g. hr@perusahaan.com"
+                className={inputClass}
+              />
+              <p className="mt-1 text-xs text-slate-400">Shown in the email signature so candidates can reply. Leave blank to omit.</p>
             </div>
             <Button variant="primary" size="md" onClick={handleSave}>
               {saved ? "Saved ✓" : "Save"}

@@ -34,7 +34,8 @@ Kami menantikan kesempatan untuk berbincang dengan Anda.
 
 Hormat kami,
 {{sender}}
-{{company}}`,
+{{company}}
+{{companyEmail}}`,
   },
   reject: {
     key: "reject",
@@ -51,7 +52,8 @@ Kami sangat menghargai minat Anda terhadap {{company}} dan mendorong Anda untuk 
 
 Salam hormat,
 {{sender}}
-{{company}}`,
+{{company}}
+{{companyEmail}}`,
   },
   offer: {
     key: "offer",
@@ -70,12 +72,14 @@ Selamat, dan selamat bergabung!
 
 Hormat kami,
 {{sender}}
-{{company}}`,
+{{company}}
+{{companyEmail}}`,
   },
 };
 
 const TEMPLATES_KEY = "hi_email_templates";
 const COMPANY_KEY = "hi_company_name";
+const COMPANY_EMAIL_KEY = "hi_company_email";
 const USER_NAME_KEY = "hi_user_name";
 
 export function fillTemplate(text: string, vars: Record<string, string>): string {
@@ -118,6 +122,16 @@ export function setCompanyName(name: string): void {
   localStorage.setItem(COMPANY_KEY, name.trim());
 }
 
+export function getCompanyEmail(): string {
+  if (typeof window === "undefined") return "";
+  return localStorage.getItem(COMPANY_EMAIL_KEY)?.trim() || "";
+}
+
+export function setCompanyEmail(email: string): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(COMPANY_EMAIL_KEY, email.trim());
+}
+
 function getSenderName(): string {
   if (typeof window === "undefined") return "Tim Rekrutmen";
   return localStorage.getItem(USER_NAME_KEY)?.trim() || "Tim Rekrutmen";
@@ -139,13 +153,15 @@ export function composeEmail(
     name: candidate.name,
     position: candidate.position,
     company: getCompanyName(),
+    companyEmail: getCompanyEmail(),
     sender: getSenderName(),
     department: candidate.department ?? "",
   };
   return {
     to: candidate.email,
     subject: fillTemplate(tpl.subject, vars),
-    body: fillTemplate(tpl.body, vars),
+    // trimEnd so an unset {{companyEmail}} doesn't leave a trailing blank line
+    body: fillTemplate(tpl.body, vars).replace(/\s+$/, ""),
   };
 }
 
