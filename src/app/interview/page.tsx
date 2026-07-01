@@ -13,7 +13,7 @@ import {
   type RubricLevel,
 } from "@/lib/competency-framework";
 import {
-  findCandidateByName, createCandidate, saveInterviewResult,
+  findCandidateByName, createCandidate, saveInterviewResult, getCandidate,
   type InterviewResultSnapshot,
 } from "@/lib/store";
 import { AppShell, Icon, SvgPath, ICON_PATHS, Card, Button, Label, inputClass, cn } from "@/components/app-shell";
@@ -954,6 +954,28 @@ export default function InterviewPage() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+
+    // Opened via "Interview" on a candidate (/interview?candidate=ID): start a
+    // fresh interview for THAT candidate so the result saves back to them.
+    const candId = params.get("candidate");
+    if (candId) {
+      const c = getCandidate(candId);
+      if (c) {
+        setPosition(c.position);
+        setCvAnalysisData({
+          candidateName: c.name,
+          position: c.position,
+          department: c.department,
+          overallScore: c.cvAnalysis?.overallScore ?? 0,
+          matchScore: c.cvAnalysis?.matchScore ?? 0,
+          recommendation: c.cvAnalysis?.recommendation ?? "",
+          questions: [],
+          reportId: c.cvAnalysis?.reportId ?? "",
+        });
+      }
+      return; // skip stale prefill/session — this is a deliberate fresh interview
+    }
+
     const pos = params.get("position");
     if (pos) setPosition(decodeURIComponent(pos));
     try {

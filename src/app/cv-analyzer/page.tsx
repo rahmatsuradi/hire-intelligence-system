@@ -12,7 +12,7 @@ import {
 import { AppShell, Icon, SvgPath, Card, Button, Label, inputClass, cn } from "@/components/app-shell";
 import type { AiAnalysisResult, CompetencyCluster } from "@/lib/cv-analyzer-ai";
 import {
-  findCandidateByName, createCandidate, saveCvAnalysis,
+  findCandidateByName, createCandidate, saveCvAnalysis, getCandidate,
   type CvAnalysisSnapshot,
 } from "@/lib/store";
 import { toast } from "@/components/toast";
@@ -372,6 +372,18 @@ export default function CvAnalyzerPage() {
       const stored = localStorage.getItem("cv_analysis_history");
       if (stored) setHistory(JSON.parse(stored));
     } catch { /* ignore */ }
+  }, []);
+
+  // Prefill from a candidate when opened via "Analyze CV" (/cv-analyzer?candidate=ID)
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("candidate");
+    if (!id) return;
+    const c = getCandidate(id);
+    if (c) {
+      setCandidateName(c.name);
+      setTargetPosition(c.position);
+      setDepartment(c.department);
+    }
   }, []);
 
   const handleSelectHistory = useCallback((item: HistoryItem) => {

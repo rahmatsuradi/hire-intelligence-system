@@ -292,7 +292,13 @@ function DetailPanel({
                 <button
                   key={s}
                   type="button"
-                  onClick={() => { if (!active) onMove(candidate.id, s); }}
+                  onClick={() => {
+                    if (active) return;
+                    onMove(candidate.id, s);
+                    // Nudge the matching email at key comms moments (only if we have an address)
+                    if (candidate.email && s === "rejected") setComposeKey("reject");
+                    else if (candidate.email && s === "offered") setComposeKey("offer");
+                  }}
                   className={cn("rounded-lg px-2.5 py-1 text-xs font-medium transition-colors", active ? cn(sc.bg, sc.text, "ring-1", sc.border) : "text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800")}
                 >
                   {STAGE_LABELS[s]}
