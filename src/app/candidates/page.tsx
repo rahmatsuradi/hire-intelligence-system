@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  AppShell, Button, Card, Icon, SvgPath, ICON_PATHS, cn, Label, inputClass,
+  AppShell, Button, Card, Icon, SvgPath, cn, Label, inputClass,
 } from "@/components/app-shell";
 import {
   type CandidateRecord, type PipelineStage, type JobRequisition, type ImportRow,

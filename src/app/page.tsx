@@ -744,6 +744,34 @@ function StatCards({ stats }: { stats: StatCard[] }) {
   );
 }
 
+/** Sortable column header button. Hoisted to module scope so its identity is
+ *  stable across renders (defining it inside CandidateTable remounted it every
+ *  render). */
+function SortBtn({
+  label, col, sortKey, sortDir, onSort,
+}: {
+  label: string;
+  col: SortKey;
+  sortKey: SortKey;
+  sortDir: SortDir;
+  onSort: (key: SortKey) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(col)}
+      className="inline-flex items-center gap-1 font-medium text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+    >
+      {label}
+      {sortKey === col && (
+        <Icon className="h-3.5 w-3.5">
+          <SvgPath name={sortDir === "asc" ? "chevronUp" : "chevronDown"} />
+        </Icon>
+      )}
+    </button>
+  );
+}
+
 function CandidateTable({
   candidates,
   searchQuery,
@@ -786,20 +814,6 @@ function CandidateTable({
     return list;
   }, [candidates, statusFilter, searchQuery, sortKey, sortDir]);
 
-  const SortBtn = ({ label, col }: { label: string; col: SortKey }) => (
-    <button
-      type="button"
-      onClick={() => onSort(col)}
-      className="inline-flex items-center gap-1 font-medium text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
-    >
-      {label}
-      {sortKey === col && (
-        <Icon className="h-3.5 w-3.5">
-          <SvgPath name={sortDir === "asc" ? "chevronUp" : "chevronDown"} />
-        </Icon>
-      )}
-    </button>
-  );
 
   return (
     <Card padding={false} className="overflow-hidden">
@@ -854,7 +868,7 @@ function CandidateTable({
           <thead>
             <tr className="border-b border-slate-200 bg-slate-50/90 dark:border-slate-800 dark:bg-slate-800/60">
               <th scope="col" className="px-5 py-3">
-                <SortBtn label="Candidate" col="name" />
+                <SortBtn label="Candidate" col="name" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
               </th>
               <th scope="col" className="px-5 py-3 font-medium text-slate-500 dark:text-slate-400">
                 Role / Dept
@@ -863,7 +877,7 @@ function CandidateTable({
                 Stage
               </th>
               <th scope="col" className="px-5 py-3">
-                <SortBtn label="Score" col="score" />
+                <SortBtn label="Score" col="score" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
               </th>
               <th scope="col" className="px-5 py-3 font-medium text-slate-500 dark:text-slate-400">
                 Interviewer
@@ -1135,7 +1149,7 @@ function UpcomingInterviews({ storeCandidates }: { storeCandidates: CandidateRec
       (c) => c.stage === "screened" || c.stage === "interviewed",
     );
     if (pending.length === 0) return INTERVIEWS;
-    return pending.slice(0, 4).map((c, i) => ({
+    return pending.slice(0, 4).map((c) => ({
       id: c.id,
       candidate: c.name,
       role: c.position,

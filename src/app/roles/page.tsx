@@ -8,7 +8,7 @@ import {
 import {
   type JobRequisition, type ReqStatus, type CandidateRecord,
   getJobReqs, saveJobReq, deleteJobReq, createJobReq,
-  getCandidatesForReq, getCandidates,
+  getCandidatesForReq,
 } from "@/lib/store";
 import { toast } from "@/components/toast";
 
@@ -176,8 +176,6 @@ function ReqDetailPanel({
   onStatusChange: (status: ReqStatus) => void;
   onDelete: () => void;
 }) {
-  const sc = STATUS_COLORS[req.status];
-
   return (
     <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900">
       <div className="flex items-center gap-3 border-b border-slate-200 px-5 py-4 dark:border-slate-800">

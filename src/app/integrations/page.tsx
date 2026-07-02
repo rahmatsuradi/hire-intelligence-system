@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { AppShell, Icon, SvgPath, Card, Button, Label, inputClass, cn } from "@/components/app-shell";
+import { AppShell, Icon, SvgPath, Card, Button, Label, inputClass } from "@/components/app-shell";
 import { buildIndeedSearch } from "@/lib/integrations";
 
 /* Connectors that work today with zero setup — they build standard deep-links
