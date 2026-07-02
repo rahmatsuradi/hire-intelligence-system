@@ -14,6 +14,9 @@ import { toast } from "@/components/toast";
 import {
   type EmailTemplateKey, TEMPLATE_ORDER, getTemplates, composeEmail, buildMailto,
 } from "@/lib/email-templates";
+import {
+  buildGmailCompose, buildGoogleCalendar, downloadIcs, type CalendarEvent,
+} from "@/lib/integrations";
 
 /* ─── Stage colors ─── */
 
@@ -186,6 +189,14 @@ function EmailComposeModal({
     onClose();
   };
 
+  const openInGmail = () => {
+    if (!hasEmail) { toast("Kandidat ini belum punya alamat email.", "error"); return; }
+    window.open(buildGmailCompose(candidate.email, subject, body), "_blank", "noopener");
+    addActivity({ action: "Email disiapkan (Gmail):", target: `${candidate.name} — ${label}`, type: "create" });
+    toast("Membuka Gmail…");
+    onClose();
+  };
+
   const copyText = async () => {
     try {
       await navigator.clipboard.writeText(`Kepada: ${candidate.email || "-"}\nSubjek: ${subject}\n\n${body}`);
@@ -221,11 +232,122 @@ function EmailComposeModal({
           </div>
           <p className="text-xs text-slate-400">Edit bebas sebelum kirim. Nama perusahaan diatur di Settings.</p>
         </div>
-        <div className="flex items-center gap-2 border-t border-slate-200 p-4 dark:border-slate-800">
-          <Button variant="primary" onClick={openInMail} disabled={!hasEmail}>
-            <Icon className="h-4 w-4"><SvgPath name="envelope" /></Icon> Buka di aplikasi email
+        <div className="flex flex-wrap items-center gap-2 border-t border-slate-200 p-4 dark:border-slate-800">
+          <Button variant="primary" onClick={openInGmail} disabled={!hasEmail}>
+            <Icon className="h-4 w-4"><SvgPath name="envelope" /></Icon> Kirim via Gmail
+          </Button>
+          <Button variant="secondary" onClick={openInMail} disabled={!hasEmail}>
+            Aplikasi email
           </Button>
           <Button variant="secondary" onClick={copyText}>Salin teks</Button>
+          <div className="flex-1" />
+          <Button variant="ghost" onClick={onClose}>Tutup</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Interview scheduling modal (Google Calendar + .ics, zero backend) ─── */
+
+/** Default the picker to the next weekday at 10:00, formatted for datetime-local. */
+function defaultInterviewSlot(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  if (d.getDay() === 6) d.setDate(d.getDate() + 2); // Sat → Mon
+  if (d.getDay() === 0) d.setDate(d.getDate() + 1); // Sun → Mon
+  d.setHours(10, 0, 0, 0);
+  // datetime-local wants local time, not UTC — offset the ISO string.
+  const tz = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - tz).toISOString().slice(0, 16);
+}
+
+function ScheduleInterviewModal({
+  candidate, onClose,
+}: {
+  candidate: CandidateRecord;
+  onClose: () => void;
+}) {
+  const [when, setWhen] = useState(defaultInterviewSlot());
+  const [duration, setDuration] = useState(45);
+  const [location, setLocation] = useState("Google Meet / Kantor");
+
+  const buildEvent = useCallback((): CalendarEvent | null => {
+    const start = new Date(when);
+    if (Number.isNaN(start.getTime())) return null;
+    const details = [
+      `Interview untuk posisi ${candidate.position}${candidate.department ? ` (${candidate.department})` : ""}.`,
+      candidate.cvAnalysis ? `Skor CV: ${candidate.cvAnalysis.overallScore} · ${candidate.cvAnalysis.recommendation}` : "",
+      "Dijadwalkan via Hire Intelligence.",
+    ].filter(Boolean).join("\n");
+    return {
+      title: `Interview — ${candidate.name} · ${candidate.position}`,
+      details,
+      location,
+      start,
+      durationMin: duration,
+      guests: candidate.email ? [candidate.email] : [],
+    };
+  }, [when, duration, location, candidate]);
+
+  const openGoogle = () => {
+    const ev = buildEvent();
+    if (!ev) { toast("Waktu tidak valid.", "error"); return; }
+    window.open(buildGoogleCalendar(ev), "_blank", "noopener");
+    addActivity({ action: "Interview dijadwalkan:", target: `${candidate.name} — ${new Date(when).toLocaleString("id-ID")}`, type: "interview" });
+    toast("Membuka Google Calendar…");
+    onClose();
+  };
+
+  const download = () => {
+    const ev = buildEvent();
+    if (!ev) { toast("Waktu tidak valid.", "error"); return; }
+    downloadIcs(ev, `interview-${candidate.name.replace(/\s+/g, "-").toLowerCase()}.ics`);
+    addActivity({ action: "Interview dijadwalkan (.ics):", target: `${candidate.name} — ${new Date(when).toLocaleString("id-ID")}`, type: "interview" });
+    toast("File kalender diunduh.");
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-sm" onClick={onClose}>
+      <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+          <div className="flex items-center gap-2">
+            <Icon className="h-5 w-5 text-blue-600 dark:text-blue-400"><SvgPath name="calendarDays" /></Icon>
+            <h2 className="text-base font-semibold text-slate-900 dark:text-white">Jadwalkan Interview</h2>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Close">
+            <Icon className="h-5 w-5"><SvgPath name="close" /></Icon>
+          </button>
+        </div>
+        <div className="space-y-3 p-5">
+          <p className="text-sm text-slate-500">
+            {candidate.name} · {candidate.position}
+            {candidate.email ? <> · undangan dikirim ke <span className="font-medium text-slate-700 dark:text-slate-300">{candidate.email}</span></> : " · (belum ada email kandidat)"}
+          </p>
+          <div>
+            <Label htmlFor="iv-when">Waktu mulai</Label>
+            <input id="iv-when" type="datetime-local" className={inputClass} value={when} onChange={(e) => setWhen(e.target.value)} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="iv-dur">Durasi</Label>
+              <select id="iv-dur" className={cn(inputClass, "cursor-pointer")} value={duration} onChange={(e) => setDuration(Number(e.target.value))}>
+                {[30, 45, 60, 90].map((m) => <option key={m} value={m}>{m} menit</option>)}
+              </select>
+            </div>
+            <div>
+              <Label htmlFor="iv-loc">Lokasi / Link</Label>
+              <input id="iv-loc" className={inputClass} value={location} onChange={(e) => setLocation(e.target.value)} />
+            </div>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 border-t border-slate-200 p-4 dark:border-slate-800">
+          <Button variant="primary" onClick={openGoogle}>
+            <Icon className="h-4 w-4"><SvgPath name="calendarDays" /></Icon> Google Calendar
+          </Button>
+          <Button variant="secondary" onClick={download}>
+            <Icon className="h-4 w-4"><SvgPath name="download" /></Icon> Unduh .ics
+          </Button>
           <div className="flex-1" />
           <Button variant="ghost" onClick={onClose}>Tutup</Button>
         </div>
@@ -252,8 +374,9 @@ function DetailPanel({
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(candidate);
   const [composeKey, setComposeKey] = useState<EmailTemplateKey | null>(null);
+  const [showSchedule, setShowSchedule] = useState(false);
 
-  useEffect(() => { setForm(candidate); setEditing(false); setComposeKey(null); }, [candidate]);
+  useEffect(() => { setForm(candidate); setEditing(false); setComposeKey(null); setShowSchedule(false); }, [candidate]);
 
   const handleSave = () => {
     const updated = { ...form, updatedAt: new Date().toISOString() };
@@ -349,9 +472,9 @@ function DetailPanel({
             </div>
             <p className="text-xs text-slate-600 dark:text-slate-400">{candidate.cvAnalysis.summary}</p>
             <span className={cn("inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold",
-              candidate.cvAnalysis.recommendation === "Strongly Recommended" || candidate.cvAnalysis.recommendation === "Recommended"
+              candidate.cvAnalysis.recommendation === "Strong Hire" || candidate.cvAnalysis.recommendation === "Hire"
                 ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300"
-                : candidate.cvAnalysis.recommendation === "Consider with Reservations"
+                : candidate.cvAnalysis.recommendation === "Review"
                   ? "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"
                   : "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300"
             )}>
@@ -442,6 +565,9 @@ function DetailPanel({
 
       {/* Footer */}
       <div className="flex items-center gap-2 border-t border-slate-200 p-4 dark:border-slate-800">
+        <Button variant="ghost" size="sm" onClick={() => setShowSchedule(true)}>
+          <Icon className="h-4 w-4"><SvgPath name="calendarDays" /></Icon> Schedule
+        </Button>
         <Button variant="ghost" size="sm" onClick={() => {
           window.open(`/interview?candidate=${candidate.id}`, "_self");
         }}>
@@ -462,6 +588,9 @@ function DetailPanel({
 
       {composeKey && (
         <EmailComposeModal candidate={candidate} templateKey={composeKey} onClose={() => setComposeKey(null)} />
+      )}
+      {showSchedule && (
+        <ScheduleInterviewModal candidate={candidate} onClose={() => setShowSchedule(false)} />
       )}
     </div>
   );

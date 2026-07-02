@@ -211,8 +211,8 @@ export function AppShell({
     { id: "cv-analyzer", label: "CV Analyzer", href: "/cv-analyzer", section: "tools" },
     { id: "interview-workspace", label: "Interview Workspace", href: "/interview", section: "tools" },
     { id: "hiring-report", label: "Hiring Report", href: "/report", section: "tools" },
-    { id: "integrations", label: "Integrations", href: "/integrations", section: "tools", soon: true },
-    { id: "settings", label: "Settings", href: "/settings", section: "tools", soon: true },
+    { id: "integrations", label: "Integrations", href: "/integrations", section: "tools" },
+    { id: "settings", label: "Settings", href: "/settings", section: "tools" },
   ], [badges]);
 
   const mainNav = navItems.filter((n) => n.section === "main");
