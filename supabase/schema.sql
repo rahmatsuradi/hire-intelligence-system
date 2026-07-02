@@ -6,6 +6,7 @@
 -- ─── Candidates ───
 create table if not exists public.candidates (
   id                text primary key,
+  user_id           uuid default auth.uid(),
   name              text not null,
   email             text default '',
   phone             text default '',
@@ -24,6 +25,7 @@ create table if not exists public.candidates (
 -- ─── Job Requisitions ───
 create table if not exists public.job_reqs (
   id             text primary key,
+  user_id        uuid default auth.uid(),
   title          text not null,
   department     text default '',
   level          text default '',
@@ -44,6 +46,7 @@ create table if not exists public.job_reqs (
 -- ─── Activity Feed ───
 create table if not exists public.activities (
   id        text primary key,
+  user_id   uuid default auth.uid(),
   action    text not null,
   target    text default '',
   "user"    text default 'You',
@@ -51,22 +54,34 @@ create table if not exists public.activities (
   "type"    text not null
 );
 
--- Helpful index for sorting the activity feed
+-- Helpful indexes
 create index if not exists activities_time_idx on public.activities ("time" desc);
+create index if not exists candidates_user_idx on public.candidates (user_id);
+create index if not exists job_reqs_user_idx   on public.job_reqs (user_id);
+create index if not exists activities_user_idx on public.activities (user_id);
 
 -- ═══════════════════════════════════════════════════════════════════════════
---  Row Level Security (RLS)
---  TEMPORARY: permissive policies so the public anon key can read/write.
---  This is fine for a single-user demo. We will tighten these when we add login.
+--  Row Level Security (RLS) — per-user isolation
+--  Each row is owned by the user who created it (user_id defaults to auth.uid()).
+--  Policies scope every operation to the authenticated owner, so one user can
+--  never read or write another user's candidates. Requires login (the anon key
+--  alone has a null auth.uid() and therefore sees nothing).
 -- ═══════════════════════════════════════════════════════════════════════════
 alter table public.candidates enable row level security;
 alter table public.job_reqs   enable row level security;
 alter table public.activities enable row level security;
 
+-- Drop any legacy permissive policies from earlier versions.
 drop policy if exists "anon all candidates" on public.candidates;
 drop policy if exists "anon all job_reqs"   on public.job_reqs;
 drop policy if exists "anon all activities" on public.activities;
+drop policy if exists "own candidates" on public.candidates;
+drop policy if exists "own job_reqs"   on public.job_reqs;
+drop policy if exists "own activities" on public.activities;
 
-create policy "anon all candidates" on public.candidates for all using (true) with check (true);
-create policy "anon all job_reqs"   on public.job_reqs   for all using (true) with check (true);
-create policy "anon all activities" on public.activities for all using (true) with check (true);
+create policy "own candidates" on public.candidates
+  for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy "own job_reqs" on public.job_reqs
+  for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy "own activities" on public.activities
+  for all using (user_id = auth.uid()) with check (user_id = auth.uid());

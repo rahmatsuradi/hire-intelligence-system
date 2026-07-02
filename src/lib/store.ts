@@ -8,6 +8,15 @@
 
 import { supabase } from './supabase';
 
+/* ─── Cloud sync error reporting ───
+   Supabase writes are fire-and-forget (localStorage is the source of truth for
+   the UI), but we must not swallow failures silently. Log them so a broken sync
+   is diagnosable instead of invisible. */
+type SyncResult = { error: { message?: string } | null } | null | undefined;
+function logSync(op: string, res: SyncResult): void {
+  if (res?.error) console.warn(`[store] ${op} sync failed:`, res.error.message ?? res.error);
+}
+
 export type PipelineStage = "applied" | "screened" | "interviewed" | "offered" | "hired" | "rejected";
 export type ReqStatus = "draft" | "active" | "paused" | "closed";
 
@@ -201,12 +210,12 @@ export function saveCandidate(candidate: CandidateRecord): void {
   if (idx >= 0) all[idx] = candidate;
   else all.unshift(candidate);
   writeJson(CANDIDATES_KEY, all);
-  supabase?.from('candidates').upsert(candidateToRow(candidate)).then(() => {});
+  supabase?.from('candidates').upsert(candidateToRow(candidate)).then((r) => logSync('candidate upsert', r));
 }
 
 export function deleteCandidate(id: string): void {
   writeJson(CANDIDATES_KEY, getCandidates().filter((c) => c.id !== id));
-  supabase?.from('candidates').delete().eq('id', id).then(() => {});
+  supabase?.from('candidates').delete().eq('id', id).then((r) => logSync('candidate delete', r));
 }
 
 export function moveCandidateStage(id: string, stage: PipelineStage): void {
@@ -302,7 +311,7 @@ export function importCandidates(rows: ImportRow[]): number {
       target: `${added} candidate${added === 1 ? "" : "s"} via CSV`,
       type: "create",
     });
-    supabase?.from('candidates').upsert(all.slice(0, added).map(candidateToRow)).then(() => {});
+    supabase?.from('candidates').upsert(all.slice(0, added).map(candidateToRow)).then((r) => logSync('candidates import', r));
   }
   return added;
 }
@@ -413,12 +422,12 @@ export function saveJobReq(req: JobRequisition): void {
   if (idx >= 0) all[idx] = req;
   else all.unshift(req);
   writeJson(JOBREQS_KEY, all);
-  supabase?.from('job_reqs').upsert(reqToRow(req)).then(() => {});
+  supabase?.from('job_reqs').upsert(reqToRow(req)).then((r) => logSync('job_req upsert', r));
 }
 
 export function deleteJobReq(id: string): void {
   writeJson(JOBREQS_KEY, getJobReqs().filter((r) => r.id !== id));
-  supabase?.from('job_reqs').delete().eq('id', id).then(() => {});
+  supabase?.from('job_reqs').delete().eq('id', id).then((r) => logSync('job_req delete', r));
 }
 
 export function createJobReq(data: {
@@ -486,7 +495,7 @@ export function addActivity(data: {
   };
   all.unshift(entry);
   writeJson(ACTIVITY_KEY, all.slice(0, 50));
-  supabase?.from('activities').insert(activityToRow(entry)).then(() => {});
+  supabase?.from('activities').insert(activityToRow(entry)).then((r) => logSync('activity insert', r));
 }
 
 /* ─── Dashboard Stats ─── */
@@ -568,9 +577,31 @@ export function clearDemoData(): void {
   writeJson(CANDIDATES_KEY, getCandidates().filter((c) => c.source !== "Demo"));
   writeJson(JOBREQS_KEY, getJobReqs().filter((r) => !r.hiringManager.startsWith("Demo:")));
   if (supabase) {
-    supabase.from('candidates').delete().eq('source', 'Demo').then(() => {});
-    supabase.from('job_reqs').delete().like('hiring_manager', 'Demo:%').then(() => {});
+    supabase.from('candidates').delete().eq('source', 'Demo').then((r) => logSync('demo candidates delete', r));
+    supabase.from('job_reqs').delete().like('hiring_manager', 'Demo:%').then((r) => logSync('demo job_reqs delete', r));
   }
+}
+
+/** Permanently delete ALL of the user's data — localStorage AND the cloud copy.
+ *  Awaits the cloud deletes so callers can safely navigate away afterwards.
+ *  Under per-user RLS, the unfiltered deletes only affect the caller's own rows. */
+export async function clearAllData(): Promise<void> {
+  writeJson(CANDIDATES_KEY, []);
+  writeJson(JOBREQS_KEY, []);
+  writeJson(ACTIVITY_KEY, []);
+  if (typeof window !== "undefined") {
+    [CANDIDATES_KEY, JOBREQS_KEY, ACTIVITY_KEY].forEach((k) => localStorage.removeItem(k));
+  }
+  if (!supabase) return;
+  // PostgREST requires a filter on delete; `id <> ''` matches every row (all ids
+  // are non-empty), scoped to the current user by RLS.
+  const results = await Promise.all([
+    supabase.from('candidates').delete().neq('id', ''),
+    supabase.from('job_reqs').delete().neq('id', ''),
+    supabase.from('activities').delete().neq('id', ''),
+  ]);
+  const labels = ['candidates clear', 'job_reqs clear', 'activities clear'];
+  results.forEach((r, i) => logSync(labels[i], r));
 }
 
 export function loadDemoData(): void {
@@ -744,9 +775,9 @@ export function loadDemoData(): void {
   writeJson(JOBREQS_KEY, [...reqs, ...existingReqs]);
   writeJson(ACTIVITY_KEY, [...activities, ...existingActivities].slice(0, 50));
   if (supabase) {
-    supabase.from('candidates').upsert(candidates.map(candidateToRow)).then(() => {});
-    supabase.from('job_reqs').upsert(reqs.map(reqToRow)).then(() => {});
-    supabase.from('activities').upsert(activities.map(activityToRow)).then(() => {});
+    supabase.from('candidates').upsert(candidates.map(candidateToRow)).then((r) => logSync('demo candidates upsert', r));
+    supabase.from('job_reqs').upsert(reqs.map(reqToRow)).then((r) => logSync('demo job_reqs upsert', r));
+    supabase.from('activities').upsert(activities.map(activityToRow)).then((r) => logSync('demo activities upsert', r));
   }
 }
 
