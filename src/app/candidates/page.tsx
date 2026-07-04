@@ -180,6 +180,39 @@ function EmailComposeModal({
   const [subject, setSubject] = useState(composed.subject);
   const [body, setBody] = useState(composed.body);
   const hasEmail = Boolean(candidate.email && candidate.email.trim());
+  const [smtpReady, setSmtpReady] = useState(false);
+  const [sending, setSending] = useState(false);
+
+  // Is server-side SMTP sending available? If so, offer a one-click "send" button.
+  useEffect(() => {
+    let active = true;
+    fetch("/api/send-email")
+      .then((r) => r.json())
+      .then((d) => { if (active) setSmtpReady(Boolean(d?.configured)); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
+
+  const sendDirect = async () => {
+    if (!hasEmail) { toast("Kandidat ini belum punya alamat email.", "error"); return; }
+    setSending(true);
+    try {
+      const res = await fetch("/api/send-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to: candidate.email, subject, body }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error ?? `Gagal (${res.status})`);
+      addActivity({ action: "Email terkirim:", target: `${candidate.name} — ${label}`, type: "create" });
+      toast("Email terkirim ke kandidat.");
+      onClose();
+    } catch (err) {
+      toast(`Gagal mengirim: ${(err as Error).message}`, "error");
+    } finally {
+      setSending(false);
+    }
+  };
 
   const openInMail = () => {
     if (!hasEmail) { toast("Kandidat ini belum punya alamat email.", "error"); return; }
@@ -233,9 +266,19 @@ function EmailComposeModal({
           <p className="text-xs text-slate-400">Edit bebas sebelum kirim. Nama perusahaan diatur di Settings.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2 border-t border-slate-200 p-4 dark:border-slate-800">
-          <Button variant="primary" onClick={openInGmail} disabled={!hasEmail}>
-            <Icon className="h-4 w-4"><SvgPath name="envelope" /></Icon> Kirim via Gmail
-          </Button>
+          {smtpReady ? (
+            <Button variant="primary" onClick={sendDirect} disabled={!hasEmail || sending}>
+              <Icon className="h-4 w-4"><SvgPath name="envelope" /></Icon>
+              {sending ? "Mengirim…" : "Kirim langsung"}
+            </Button>
+          ) : (
+            <Button variant="primary" onClick={openInGmail} disabled={!hasEmail}>
+              <Icon className="h-4 w-4"><SvgPath name="envelope" /></Icon> Kirim via Gmail
+            </Button>
+          )}
+          {smtpReady && (
+            <Button variant="secondary" onClick={openInGmail} disabled={!hasEmail}>Gmail web</Button>
+          )}
           <Button variant="secondary" onClick={openInMail} disabled={!hasEmail}>
             Aplikasi email
           </Button>

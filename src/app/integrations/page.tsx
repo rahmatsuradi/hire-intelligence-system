@@ -10,8 +10,8 @@ const ACTIVE = [
     name: "Gmail",
     category: "Email",
     icon: "envelope" as const,
-    desc: "Kirim undangan interview, penawaran, dan penolakan langsung dari kartu kandidat — terbuka pra-isi di Gmail web.",
-    where: "Candidates → pilih kandidat → Kirim Email → Kirim via Gmail",
+    desc: "Kirim undangan interview, penawaran, dan penolakan dari kartu kandidat — pra-isi di Gmail web, atau kirim langsung tanpa buka tab jika SMTP (App Password) diatur.",
+    where: "Candidates → pilih kandidat → Kirim Email",
   },
   {
     name: "Google Calendar",
