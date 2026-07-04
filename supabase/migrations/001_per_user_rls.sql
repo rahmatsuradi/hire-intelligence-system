@@ -44,10 +44,13 @@ create policy "own activities" on public.activities
   for all using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 -- ─── OPTIONAL backfill ───────────────────────────────────────────────────────
--- Claim all previously-unowned rows for the CURRENT logged-in user. Only run
--- this while authenticated as the account that should own the legacy data
--- (e.g. via the SQL editor's "Run as" / an authenticated session). Uncomment:
+-- Claim all previously-unowned rows for an existing account so they stay
+-- visible. NOTE: auth.uid() is NULL in the SQL editor (it runs as the postgres
+-- role), so resolve the owner from auth.users instead. Defaults to the first
+-- account — fine for a single-user project; use a specific UUID otherwise.
+-- (Migration 002 performs this same backfill automatically before adding the
+-- composite primary key, so you can skip this and just run 002.)
 --
--- update public.candidates set user_id = auth.uid() where user_id is null;
--- update public.job_reqs   set user_id = auth.uid() where user_id is null;
--- update public.activities set user_id = auth.uid() where user_id is null;
+-- update public.candidates set user_id = (select id from auth.users order by created_at limit 1) where user_id is null;
+-- update public.job_reqs   set user_id = (select id from auth.users order by created_at limit 1) where user_id is null;
+-- update public.activities set user_id = (select id from auth.users order by created_at limit 1) where user_id is null;

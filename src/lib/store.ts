@@ -17,6 +17,21 @@ function logSync(op: string, res: SyncResult): void {
   if (res?.error) console.warn(`[store] ${op} sync failed:`, res.error.message ?? res.error);
 }
 
+/* ─── Current user id ───
+   Rows are owned per-user (composite primary key (user_id, id)). We cache the
+   logged-in user's id so writes can stamp user_id explicitly, making upserts
+   deterministic against the composite key. When it's unknown (not yet loaded
+   or localStorage-only mode) we omit it and let the DB default (auth.uid())
+   fill it on insert. */
+let currentUserId: string | null = null;
+if (supabase) {
+  supabase.auth.getSession().then(({ data }) => { currentUserId = data.session?.user.id ?? null; });
+  supabase.auth.onAuthStateChange((_event, session) => { currentUserId = session?.user.id ?? null; });
+}
+function ownerFields(): { user_id?: string } {
+  return currentUserId ? { user_id: currentUserId } : {};
+}
+
 export type PipelineStage = "applied" | "screened" | "interviewed" | "offered" | "hired" | "rejected";
 export type ReqStatus = "draft" | "active" | "paused" | "closed";
 
@@ -111,6 +126,7 @@ export function generateId(prefix: string): string {
 
 function candidateToRow(c: CandidateRecord) {
   return {
+    ...ownerFields(),
     id: c.id, name: c.name, email: c.email, phone: c.phone, stage: c.stage,
     job_req_id: c.jobReqId, department: c.department, position: c.position,
     source: c.source, notes: c.notes, cv_analysis: c.cvAnalysis,
@@ -136,6 +152,7 @@ function rowToCandidate(r: Record<string, unknown>): CandidateRecord {
 
 function reqToRow(r: JobRequisition) {
   return {
+    ...ownerFields(),
     id: r.id, title: r.title, department: r.department, level: r.level, status: r.status,
     description: r.description, requirements: r.requirements,
     salary_min: r.salaryMin, salary_max: r.salaryMax, currency: r.currency,
@@ -164,7 +181,7 @@ function rowToReq(r: Record<string, unknown>): JobRequisition {
 }
 
 function activityToRow(a: ActivityEntry) {
-  return { id: a.id, action: a.action, target: a.target, user: a.user, time: a.time, type: a.type };
+  return { ...ownerFields(), id: a.id, action: a.action, target: a.target, user: a.user, time: a.time, type: a.type };
 }
 
 function rowToActivity(r: Record<string, unknown>): ActivityEntry {
@@ -210,7 +227,7 @@ export function saveCandidate(candidate: CandidateRecord): void {
   if (idx >= 0) all[idx] = candidate;
   else all.unshift(candidate);
   writeJson(CANDIDATES_KEY, all);
-  supabase?.from('candidates').upsert(candidateToRow(candidate)).then((r) => logSync('candidate upsert', r));
+  supabase?.from('candidates').upsert(candidateToRow(candidate), { onConflict: 'user_id,id' }).then((r) => logSync('candidate upsert', r));
 }
 
 export function deleteCandidate(id: string): void {
@@ -311,7 +328,7 @@ export function importCandidates(rows: ImportRow[]): number {
       target: `${added} candidate${added === 1 ? "" : "s"} via CSV`,
       type: "create",
     });
-    supabase?.from('candidates').upsert(all.slice(0, added).map(candidateToRow)).then((r) => logSync('candidates import', r));
+    supabase?.from('candidates').upsert(all.slice(0, added).map(candidateToRow), { onConflict: 'user_id,id' }).then((r) => logSync('candidates import', r));
   }
   return added;
 }
@@ -422,7 +439,7 @@ export function saveJobReq(req: JobRequisition): void {
   if (idx >= 0) all[idx] = req;
   else all.unshift(req);
   writeJson(JOBREQS_KEY, all);
-  supabase?.from('job_reqs').upsert(reqToRow(req)).then((r) => logSync('job_req upsert', r));
+  supabase?.from('job_reqs').upsert(reqToRow(req), { onConflict: 'user_id,id' }).then((r) => logSync('job_req upsert', r));
 }
 
 export function deleteJobReq(id: string): void {
@@ -775,9 +792,9 @@ export function loadDemoData(): void {
   writeJson(JOBREQS_KEY, [...reqs, ...existingReqs]);
   writeJson(ACTIVITY_KEY, [...activities, ...existingActivities].slice(0, 50));
   if (supabase) {
-    supabase.from('candidates').upsert(candidates.map(candidateToRow)).then((r) => logSync('demo candidates upsert', r));
-    supabase.from('job_reqs').upsert(reqs.map(reqToRow)).then((r) => logSync('demo job_reqs upsert', r));
-    supabase.from('activities').upsert(activities.map(activityToRow)).then((r) => logSync('demo activities upsert', r));
+    supabase.from('candidates').upsert(candidates.map(candidateToRow), { onConflict: 'user_id,id' }).then((r) => logSync('demo candidates upsert', r));
+    supabase.from('job_reqs').upsert(reqs.map(reqToRow), { onConflict: 'user_id,id' }).then((r) => logSync('demo job_reqs upsert', r));
+    supabase.from('activities').upsert(activities.map(activityToRow), { onConflict: 'user_id,id' }).then((r) => logSync('demo activities upsert', r));
   }
 }
 
@@ -796,7 +813,7 @@ export async function syncFromSupabase(): Promise<void> {
     writeJson(CANDIDATES_KEY, candidatesRes.data.map(rowToCandidate));
   } else {
     const local = getCandidates();
-    if (local.length) await supabase.from('candidates').upsert(local.map(candidateToRow));
+    if (local.length) await supabase.from('candidates').upsert(local.map(candidateToRow), { onConflict: 'user_id,id' });
   }
 
   // Job reqs
@@ -804,7 +821,7 @@ export async function syncFromSupabase(): Promise<void> {
     writeJson(JOBREQS_KEY, reqsRes.data.map(rowToReq));
   } else {
     const local = getJobReqs();
-    if (local.length) await supabase.from('job_reqs').upsert(local.map(reqToRow));
+    if (local.length) await supabase.from('job_reqs').upsert(local.map(reqToRow), { onConflict: 'user_id,id' });
   }
 
   // Activities
@@ -812,6 +829,6 @@ export async function syncFromSupabase(): Promise<void> {
     writeJson(ACTIVITY_KEY, activitiesRes.data.map(rowToActivity));
   } else {
     const local = getActivities();
-    if (local.length) await supabase.from('activities').upsert(local.map(activityToRow));
+    if (local.length) await supabase.from('activities').upsert(local.map(activityToRow), { onConflict: 'user_id,id' });
   }
 }

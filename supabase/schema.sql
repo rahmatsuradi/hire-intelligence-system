@@ -4,9 +4,11 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- ─── Candidates ───
+-- Primary key is composite (user_id, id): each row is owned by a user, and the
+-- client-generated id only needs to be unique within that user's data.
 create table if not exists public.candidates (
-  id                text primary key,
-  user_id           uuid default auth.uid(),
+  id                text not null,
+  user_id           uuid not null default auth.uid(),
   name              text not null,
   email             text default '',
   phone             text default '',
@@ -19,13 +21,14 @@ create table if not exists public.candidates (
   cv_analysis       jsonb,
   interview_results jsonb default '[]'::jsonb,
   created_at        timestamptz default now(),
-  updated_at        timestamptz default now()
+  updated_at        timestamptz default now(),
+  primary key (user_id, id)
 );
 
 -- ─── Job Requisitions ───
 create table if not exists public.job_reqs (
-  id             text primary key,
-  user_id        uuid default auth.uid(),
+  id             text not null,
+  user_id        uuid not null default auth.uid(),
   title          text not null,
   department     text default '',
   level          text default '',
@@ -40,18 +43,20 @@ create table if not exists public.job_reqs (
   headcount      int default 1,
   hiring_manager text default '',
   created_at     timestamptz default now(),
-  updated_at     timestamptz default now()
+  updated_at     timestamptz default now(),
+  primary key (user_id, id)
 );
 
 -- ─── Activity Feed ───
 create table if not exists public.activities (
-  id        text primary key,
-  user_id   uuid default auth.uid(),
+  id        text not null,
+  user_id   uuid not null default auth.uid(),
   action    text not null,
   target    text default '',
   "user"    text default 'You',
   "time"    timestamptz default now(),
-  "type"    text not null
+  "type"    text not null,
+  primary key (user_id, id)
 );
 
 -- Helpful indexes
