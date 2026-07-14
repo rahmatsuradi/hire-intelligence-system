@@ -1,7 +1,9 @@
 "use client";
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Login / Sign-up page — standalone (no AppShell, no auth gate).
+   Login page — standalone (no AppShell, no auth gate).
+   Sign-in only: new accounts are created by an admin in Supabase
+   (Authentication → Users). Self-service sign-up is intentionally removed.
    Uses Supabase email + password auth. On success, redirects to the dashboard.
 ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -14,12 +16,10 @@ const inputClass =
 
 export default function LoginPage() {
   const router = useRouter();
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
 
   // Already logged in? Skip straight to the dashboard.
   useEffect(() => {
@@ -32,7 +32,6 @@ export default function LoginPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    setNotice("");
 
     if (!supabase) {
       setError("Database is not configured. Add Supabase keys to enable login.");
@@ -43,28 +42,12 @@ export default function LoginPage() {
       setError("Email and password are required.");
       return;
     }
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
-      return;
-    }
 
     setLoading(true);
     try {
-      if (mode === "signup") {
-        const { data, error: err } = await supabase.auth.signUp({ email: mail, password });
-        if (err) throw err;
-        if (data.session) {
-          router.replace("/");
-        } else {
-          // Email confirmation is enabled in Supabase — user must confirm first.
-          setNotice("Account created. Check your email to confirm, then sign in.");
-          setMode("signin");
-        }
-      } else {
-        const { error: err } = await supabase.auth.signInWithPassword({ email: mail, password });
-        if (err) throw err;
-        router.replace("/");
-      }
+      const { error: err } = await supabase.auth.signInWithPassword({ email: mail, password });
+      if (err) throw err;
+      router.replace("/");
     } catch (err) {
       setError((err as Error).message || "Something went wrong. Please try again.");
     } finally {
@@ -81,9 +64,7 @@ export default function LoginPage() {
             <span className="text-lg font-bold tracking-tight">HI</span>
           </div>
           <h1 className="mt-4 text-xl font-semibold text-slate-900 dark:text-white">Hire Intelligence</h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            {mode === "signin" ? "Sign in to your workspace" : "Create your account"}
-          </p>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Sign in to your workspace</p>
         </div>
 
         {/* Card */}
@@ -110,7 +91,7 @@ export default function LoginPage() {
               <input
                 id="password"
                 type="password"
-                autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
@@ -123,46 +104,19 @@ export default function LoginPage() {
                 {error}
               </p>
             )}
-            {notice && (
-              <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-950 dark:text-emerald-300">
-                {notice}
-              </p>
-            )}
 
             <button
               type="submit"
               disabled={loading}
               className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 disabled:pointer-events-none disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600"
             >
-              {loading ? "Please wait…" : mode === "signin" ? "Sign in" : "Create account"}
+              {loading ? "Please wait…" : "Sign in"}
             </button>
           </form>
 
-          <div className="mt-5 text-center text-sm text-slate-500 dark:text-slate-400">
-            {mode === "signin" ? (
-              <>
-                Don&apos;t have an account?{" "}
-                <button
-                  type="button"
-                  onClick={() => { setMode("signup"); setError(""); setNotice(""); }}
-                  className="font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400"
-                >
-                  Sign up
-                </button>
-              </>
-            ) : (
-              <>
-                Already have an account?{" "}
-                <button
-                  type="button"
-                  onClick={() => { setMode("signin"); setError(""); setNotice(""); }}
-                  className="font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400"
-                >
-                  Sign in
-                </button>
-              </>
-            )}
-          </div>
+          <p className="mt-5 text-center text-xs text-slate-400 dark:text-slate-500">
+            Access is invite-only. Contact your administrator for an account.
+          </p>
         </div>
 
         <p className="mt-6 text-center text-xs text-slate-400 dark:text-slate-500">
