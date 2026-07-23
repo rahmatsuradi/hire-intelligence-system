@@ -154,8 +154,8 @@ Tarif yang disesuaikan berkala oleh pemerintah (mis. plafon upah BPJS, disesuaik
 
 ```bash
 # Clone repo
-git clone https://github.com/rahmatsuradi/hire-intelligence-system.git
-cd hire-intelligence-system
+git clone https://github.com/rahmatsuradi/people-intelligence-hub.git
+cd people-intelligence-hub
 
 # Install dependencies
 npm install
