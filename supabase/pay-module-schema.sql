@@ -26,6 +26,25 @@ create table if not exists pi_employees (
   created_at      timestamptz not null default now()
 );
 
+-- ── Jembatan Hire -> Pay (aditif) ────────────────────────────
+-- Kandidat yang di-hire bisa di-onboard jadi karyawan lewat /pay/onboarding.
+-- NULLABLE: karyawan lama (sudah bekerja sebelum modul Hire dipakai) tidak punya
+-- kandidat asal. UNIQUE: satu kandidat tidak bisa di-onboard dua kali.
+-- ON DELETE SET NULL: kandidat dihapus dari modul Hire != karyawan berhenti kerja,
+-- jadi record karyawan HARUS selamat, hanya kehilangan tautan balik ke rekrutmen.
+alter table pi_employees add column if not exists hired_candidate_id text
+  references public.candidates(id) on delete set null;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conname = 'pi_employees_hired_candidate_id_key'
+  ) then
+    alter table pi_employees add constraint pi_employees_hired_candidate_id_key unique (hired_candidate_id);
+  end if;
+end $$;
+
 -- ── Profil kompensasi (versioned) ────────────────────────────
 -- unique(employee_id, effective_date): satu profil kompensasi per karyawan per
 -- tanggal efektif -> re-run seed/insert tidak pernah menggandakan baris.

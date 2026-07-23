@@ -40,6 +40,12 @@ Filosofi modul Pay: logika pajak dan BPJS bukan sekadar fitur, tapi **klaim kepa
 - **Lembur** — tabel multiplier berjenjang sesuai PP 35/2021 (bukan tabel Kepmenaker 102/2004 yang sudah dicabut — kesalahan umum yang masih beredar di banyak kalkulator online)
 - **Tarif sebagai data, bukan kode** — setiap tarif statutori disimpan *versioned* per tanggal berlaku; saat pemerintah mengubah tarif (mis. plafon upah BPJS naik tiap Maret), tinggal tambah baris data baru — perhitungan periode lama tetap akurat secara retroaktif
 
+### 🔗 Jembatan Hire → Pay (Onboarding)
+- Kandidat berstatus **Hired** otomatis muncul di antrean onboarding payroll
+- Form onboarding menarik data yang sudah diketahui dari rekrutmen (nama, posisi, departemen) dan meminta data yang **hanya ada saat kontrak ditandatangani** — upah disepakati, status PTKP, NIK, tanggal masuk, tipe kontrak (PKWT/PKWTT), kelas risiko JKK
+- Sekali submit → karyawan + profil kompensasi terbentuk, langsung ikut terhitung di payroll periode berikutnya
+- Relasi dirancang aman: satu kandidat tidak bisa di-onboard dua kali, dan menghapus kandidat di modul Hire **tidak** menghapus record karyawannya (orangnya tetap bekerja)
+
 ### 🧾 Pay — Slip Gaji & Laporan
 - Slip gaji otomatis dengan itemisasi lengkap (pendapatan, potongan, kontribusi perusahaan terpisah)
 - Data pribadi sensitif (NIK, NPWP, rekening bank) **ter-masking otomatis** sesuai UU PDP 27/2022

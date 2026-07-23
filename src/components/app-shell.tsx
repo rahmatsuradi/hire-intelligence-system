@@ -93,7 +93,7 @@ const NAV_ICON_MAP: Record<string, keyof typeof ICON_PATHS> = {
   dashboard: "dashboard", candidates: "users", roles: "briefcase", interviews: "calendar",
   analytics: "chart", reports: "document", "cv-analyzer": "scan",
   "interview-workspace": "workspace", "hiring-report": "report", integrations: "plug", settings: "cog",
-  payroll: "report", employees: "users", laporan: "chart",
+  payroll: "report", employees: "users", laporan: "chart", onboarding: "arrowRight",
 };
 
 /* ─── UI Primitives ─── */
@@ -209,6 +209,7 @@ export function AppShell({
     { id: "interviews", label: "Interviews", href: "/interview", section: "main" },
     { id: "analytics", label: "Analytics", href: "/analytics", section: "main" },
     { id: "reports", label: "Reports", href: "/report", section: "main" },
+    { id: "onboarding", label: "Onboarding", href: "/pay/onboarding", section: "pay" },
     { id: "payroll", label: "Payroll", href: "/pay/payroll", section: "pay" },
     { id: "employees", label: "Employees", href: "/pay/employees", section: "pay" },
     { id: "laporan", label: "Laporan", href: "/pay/laporan", section: "pay" },

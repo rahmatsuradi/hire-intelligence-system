@@ -14,6 +14,18 @@ export interface PiEmployeeRow {
   department: string | null;
   bank_account: string | null;
   status: string;
+  hired_candidate_id?: string | null; // tautan ke candidates.id (modul Hire); null = karyawan non-rekrutmen
+}
+
+// Kandidat modul Hire berstatus 'hired' — kandidat untuk di-onboard jadi pi_employees.
+export interface HiredCandidateRow {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  position: string;
+  department: string | null;
+  stage: string;
 }
 
 export interface PiCompensationRow {

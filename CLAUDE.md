@@ -59,14 +59,14 @@ Ikuti pola `schema.sql` yang sudah ada (bukan folder migrations): Supabase SQL E
 
 ## 8. Integrasi UI (aditif)
 
-- Seksi nav **"Pay"** di `navItems` pada `src/components/app-shell.tsx` (di samping "Main"/"Tools") — Payroll, Employees, Laporan.
+- Seksi nav **"Pay"** di `navItems` pada `src/components/app-shell.tsx` (di samping "Main"/"Tools") — Onboarding, Payroll, Employees, Laporan.
 - Route di `src/app/pay/*`, tidak menyentuh route Hire.
-- Tautan alami (belum dibangun): kandidat Hire yang diterima → jadi record `pi_employees` (relasi baru, aditif; bukan mengubah logika Hire).
+- **Jembatan Hire → Pay (selesai):** `/pay/onboarding` menampilkan kandidat berstatus `hired` yang belum punya record payroll, lalu form onboarding membuat `pi_employees` + `pi_compensation` sekaligus. Tautan disimpan di `pi_employees.hired_candidate_id` (nullable — karyawan lama tidak berasal dari Hire; unique — satu kandidat tidak bisa di-onboard dua kali; `on delete set null` — kandidat dihapus dari Hire tidak boleh menghapus record karyawan).
+- Jembatan ini **sengaja tidak sepenuhnya otomatis**: data rekrutmen tidak pernah memuat upah disepakati, PTKP, NIK, tanggal masuk, tipe kontrak, dan kelas risiko JKK — semuanya wajib untuk BPJS/PPh 21 dan hanya tersedia saat kontrak ditandatangani. Form onboarding menarik otomatis yang sudah diketahui (nama, posisi, departemen) dan meminta sisanya.
 
 ## 9. Yang belum dikerjakan
 
 - Formulir pelaporan pajak tahunan 1721-A1.
-- Tautan otomatis kandidat Hire yang diterima → `pi_employees`.
 - Arahkan instance produksi ke data perusahaan asli (baru dilakukan setelah kelas risiko JKK final dikonfirmasi ke BPJS, dan UMK diisi sesuai SK Gubernur/Permenaker tahun berjalan untuk wilayah yang relevan — nilai UMK di seed saat ini murni placeholder demo).
 
 ## 10. Verifikasi tarif — status & jadwal ulang
