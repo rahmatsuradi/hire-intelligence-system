@@ -15,7 +15,7 @@ interface NavItem {
   label: string;
   href: string;
   badge?: number;
-  section: "main" | "tools";
+  section: "main" | "pay" | "tools";
   soon?: boolean;
 }
 
@@ -93,6 +93,7 @@ const NAV_ICON_MAP: Record<string, keyof typeof ICON_PATHS> = {
   dashboard: "dashboard", candidates: "users", roles: "briefcase", interviews: "calendar",
   analytics: "chart", reports: "document", "cv-analyzer": "scan",
   "interview-workspace": "workspace", "hiring-report": "report", integrations: "plug", settings: "cog",
+  payroll: "report", employees: "users", laporan: "chart",
 };
 
 /* ─── UI Primitives ─── */
@@ -208,6 +209,9 @@ export function AppShell({
     { id: "interviews", label: "Interviews", href: "/interview", section: "main" },
     { id: "analytics", label: "Analytics", href: "/analytics", section: "main" },
     { id: "reports", label: "Reports", href: "/report", section: "main" },
+    { id: "payroll", label: "Payroll", href: "/pay/payroll", section: "pay" },
+    { id: "employees", label: "Employees", href: "/pay/employees", section: "pay" },
+    { id: "laporan", label: "Laporan", href: "/pay/laporan", section: "pay" },
     { id: "cv-analyzer", label: "CV Analyzer", href: "/cv-analyzer", section: "tools" },
     { id: "interview-workspace", label: "Interview Workspace", href: "/interview", section: "tools" },
     { id: "hiring-report", label: "Hiring Report", href: "/report", section: "tools" },
@@ -216,6 +220,7 @@ export function AppShell({
   ], [badges]);
 
   const mainNav = navItems.filter((n) => n.section === "main");
+  const payNav = navItems.filter((n) => n.section === "pay");
   const toolsNav = navItems.filter((n) => n.section === "tools");
 
   // Auth gate: show a loader while checking, render nothing while redirecting.
@@ -261,10 +266,10 @@ export function AppShell({
       <aside className={cn("fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-slate-200 bg-white transition-transform duration-200 ease-out dark:border-slate-800 dark:bg-slate-900 lg:static lg:translate-x-0", sidebarOpen ? "translate-x-0" : "-translate-x-full")} aria-label="Main navigation">
         <div className="flex h-16 shrink-0 items-center gap-3 border-b border-slate-200 px-5 dark:border-slate-800">
           <Link href="/" className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/20">
-            <span className="text-sm font-bold tracking-tight">HI</span>
+            <span className="text-sm font-bold tracking-tight">PI</span>
           </Link>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">Hire Intelligence</p>
+            <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">People Intelligence</p>
             <p className="truncate text-xs text-slate-500 dark:text-slate-400">Enterprise Platform</p>
           </div>
           <button type="button" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 lg:hidden dark:hover:bg-slate-800" onClick={() => setSidebarOpen(false)} aria-label="Close menu">
@@ -275,6 +280,10 @@ export function AppShell({
           <div>
             <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Main</p>
             <div className="space-y-0.5">{renderNav(mainNav)}</div>
+          </div>
+          <div>
+            <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Pay</p>
+            <div className="space-y-0.5">{renderNav(payNav)}</div>
           </div>
           <div>
             <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Tools</p>
@@ -336,7 +345,7 @@ export function AppShell({
 
           <footer className="border-t border-slate-200 px-6 py-4 dark:border-slate-800">
             <div className="flex flex-col gap-2 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between dark:text-slate-400">
-              <p>&copy; 2026 Hire Intelligence &middot; Enterprise Hiring Platform</p>
+              <p>&copy; 2026 People Intelligence &middot; Enterprise HR Platform</p>
               <p className="tabular-nums">v3.1.0 &middot; SOC 2 Type II &middot; GDPR compliant</p>
             </div>
           </footer>

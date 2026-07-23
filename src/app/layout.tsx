@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Hire Intelligence System",
-  description: "AI-powered hiring platform — CV analysis, structured interviews, and hiring decisions.",
+  title: "People Intelligence",
+  description: "AI-powered people platform — recruitment, payroll, and HR operations.",
 };
 
 export default function RootLayout({
