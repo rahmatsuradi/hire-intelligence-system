@@ -2,7 +2,7 @@
 
 **AI-powered HR platform** untuk konteks Indonesia: mulai dari analisis CV berbasis kompetensi (modul **Hire**) sampai kalkulasi gaji, BPJS, dan PPh 21 yang terverifikasi sesuai regulasi resmi (modul **Pay**).
 
-🔗 **Live Demo:** [people-intelligence.vercel.app](https://people-intelligence.vercel.app) — data 100% sintetis/fiktif, aman dijelajahi.
+🔗 **Live Demo:** [people-intelligence-hub.vercel.app](https://people-intelligence-hub.vercel.app) — data 100% sintetis/fiktif, aman dijelajahi.
 
 ---
 
