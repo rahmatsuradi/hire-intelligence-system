@@ -38,7 +38,7 @@ function Shell({ children }: { children: React.ReactNode }) {
       </header>
       <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-12">{children}</div>
       <footer className="mx-auto max-w-2xl px-4 pb-10 text-center text-xs text-slate-400 dark:text-slate-500 sm:px-6">
-        &copy; 2026 Hire Intelligence · Careers
+        &copy; 2026 People Intelligence · Careers
       </footer>
     </main>
   );

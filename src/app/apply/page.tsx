@@ -85,7 +85,7 @@ export default async function ApplyListingPage() {
       </div>
 
       <footer className="mx-auto max-w-3xl px-4 pb-10 text-center text-xs text-slate-400 dark:text-slate-500 sm:px-6">
-        &copy; 2026 Hire Intelligence · Careers
+        &copy; 2026 People Intelligence · Careers
       </footer>
     </main>
   );

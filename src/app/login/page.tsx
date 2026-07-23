@@ -61,9 +61,9 @@ export default function LoginPage() {
         {/* Brand */}
         <div className="mb-8 flex flex-col items-center text-center">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-500/25">
-            <span className="text-lg font-bold tracking-tight">HI</span>
+            <span className="text-lg font-bold tracking-tight">PI</span>
           </div>
-          <h1 className="mt-4 text-xl font-semibold text-slate-900 dark:text-white">Hire Intelligence</h1>
+          <h1 className="mt-4 text-xl font-semibold text-slate-900 dark:text-white">People Intelligence</h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Sign in to your workspace</p>
         </div>
 
@@ -120,7 +120,7 @@ export default function LoginPage() {
         </div>
 
         <p className="mt-6 text-center text-xs text-slate-400 dark:text-slate-500">
-          &copy; 2026 Hire Intelligence &middot; Enterprise Hiring Platform
+          &copy; 2026 People Intelligence &middot; Enterprise HR Platform
         </p>
       </div>
     </div>

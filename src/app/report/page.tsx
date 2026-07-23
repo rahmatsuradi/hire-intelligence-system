@@ -596,7 +596,7 @@ td{padding:7px 10px;border-bottom:1px solid #f1f5f9}
 .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:9pt;font-weight:600}
 @media print{button{display:none}}</style></head><body>
 <div style="display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:14px;border-bottom:2px solid #2563eb;margin-bottom:18px">
-  <div><h1>Hire Intelligence</h1><p style="color:#64748b;font-size:9pt">Hiring Decision Report</p></div>
+  <div><h1>People Intelligence</h1><p style="color:#64748b;font-size:9pt">Hiring Decision Report</p></div>
   <div style="text-align:right"><p style="font-family:monospace;font-size:9pt;color:#64748b">${report.id}</p><p style="font-size:9pt;color:#64748b">${report.reportDate}</p></div>
 </div>
 <h2>${report.name}</h2>

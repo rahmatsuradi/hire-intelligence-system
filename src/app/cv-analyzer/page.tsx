@@ -481,7 +481,7 @@ export default function CvAnalyzerPage() {
     <div style="display:flex;align-items:center;gap:10px">
       <div style="width:36px;height:36px;background:linear-gradient(135deg,#2563eb,#4f46e5);border-radius:8px;display:flex;align-items:center;justify-content:center;color:white;font-weight:bold;font-size:12pt">HI</div>
       <div>
-        <h1 style="font-size:14pt;font-weight:700">Hire Intelligence</h1>
+        <h1 style="font-size:14pt;font-weight:700">People Intelligence</h1>
         <p style="font-size:9pt;color:#64748b">AI-Powered CV Analysis Report</p>
       </div>
     </div>
@@ -550,7 +550,7 @@ export default function CvAnalyzerPage() {
   ` : ""}
 
   <div style="margin-top:24px;padding-top:12px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;font-size:8pt;color:#94a3b8">
-    <span>Hire Intelligence · hire-intelligence-system.vercel.app</span>
+    <span>People Intelligence · hire-intelligence-system.vercel.app</span>
     <span>Generated: ${report.generatedAt} · Groq Llama 3.3 70B · No PII stored</span>
   </div>
 </body>

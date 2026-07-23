@@ -1440,7 +1440,7 @@ export default function Home() {
                 <Icon className="h-5 w-5 text-blue-600 dark:text-blue-400"><SvgPath name="sparkles" /></Icon>
               </div>
               <div>
-                <p className="font-semibold text-slate-900 dark:text-white">Welcome to Hire Intelligence</p>
+                <p className="font-semibold text-slate-900 dark:text-white">Welcome to People Intelligence</p>
                 <p className="mt-0.5 text-sm text-slate-500">Load sample candidates to explore the platform, or start by analyzing your first CV.</p>
               </div>
             </div>
